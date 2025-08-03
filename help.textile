@@ -1,0 +1,29 @@
+h1. Overview
+
+* In the @Write@ panel, find and add images to the @Article Image@ field or any specified @custom field@
+* Thumbnail previews, reordered via dragging
+* The default @Images@ panel opens in a *SideView*, providing full search and edit capabilities
+* Build gallery @shortcode@s for insertion into any textarea
+
+h2. Requirements
+
+Textpattern 4.8.0+
+
+h2. Installation
+
+Upload the plugin zip folder:
+
+* using the plugin installer tab if using Textpattern 4.9+
+*
+
+Install and activate the plugin. 
+
+In progress
+
+h2. Configuration
+
+In progress
+
+h2. Usage
+
+In progress
