@@ -1,0 +1,10 @@
+#@prefs
+#@language en, en-gb, en-us
+all_pic => allPic
+all_pic_fields => Specified fields
+all_pic_shortcode => Shortcode
+#@article
+addImages => Add Images
+deleteText => Exclude image
+editText => Edit image
+closeText => Close SideView

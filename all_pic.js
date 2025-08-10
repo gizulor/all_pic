@@ -1,113 +1,139 @@
+/* To do:
+What if thumbFields aren't numeric:
+/images/my_pic.jpg
+https://example.com/path/to/images/my_pic.jpg
+
+
+*/
+
+
 $(document).ready(function() {
+
   const prefs = window.allPicConfig || {};
 
   const thumbFields = prefs.thumbFields?.split(/[ ,]+/) || [];
   const shortcodeBase = prefs.shortcodeBase || '';
-  const addImages = prefs.addImages || 'Add';
-  const deleteText = prefs.deleteText || 'Delete';
-  const editText = prefs.editText || 'Edit';
-  const closeText = prefs.closeText || 'Close';
+  const addImages = prefs.addImages || 'Add Images';
+  const deleteText = prefs.deleteText || 'Exclude image';
+  const editText = prefs.editText || 'Edit image';
+  const closeText = prefs.closeText || 'Close SideView';
 
-  // Create a combined jQuery object from all fields
+  // create a combined jQuery object from all fields
   const $thumbInputs = $(thumbFields.join(','));
+
+  if (!$('#all_pic_store').length) {
+    $('body').append('<div id="all_pic_store">' + (prefs.thumb_markup || '') + '</div>');
+  }
 
   all_picjs();
   textpattern.Relay.register("txpAsyncForm.success", all_picjs);
 
   function all_picjs() {
-    // Add UI containers after each image field
+    // add UI containers after each image field
     thumbFields.forEach(function(selector) {
       $(selector).after(
-        `<div>
+        `<div class="all_pics_container">
           <ul class="all_pics"></ul>
           <a class="all_pics__add" href="#" title="${addImages}">${addImages} <span class="ui-icon ui-icon-search"></span></a>
         </div>`
       );
     });
 
-    thumbFields.forEach(function(selector) {
-      const $field = $(selector);
-    });
-
-    $('body').append('<div id="all_pic_store">' + (prefs.thumb_markup || '') + '</div>');
-
+    // add thumbs to each container
     $('.all_pics').each(function() {
-      const value = $(this).parent().prev().val();
-      const container = $(this);
-      container.empty();
-      if (value) {
-        const ids = value.split(/[ ,]+/);
-        ids.forEach(function(id) {
-          const idClass = `.id${id}`;
-          $('#all_pic_store ' + idClass).clone().appendTo(container);
-        });
-      }
+      const $container = $(this);
+      const $input = $container.parent().prev();
+      refreshThumbsFromInput($input, $container);
     });
 
-    $('#all_pic_store').remove();
+    function refreshThumbsFromInput($input, container) {
+      const ids = ($input.val() || '').split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
+      container.empty();
+
+      ids.forEach(function(item) {
+        const id = item.trim();
+
+        // Check if it's a numeric ID (match against #all_pic_store)
+        if (/^\d+$/.test(id)) {
+          const $thumb = $('#all_pic_store').find(`[data-id="${id}"]`).clone();
+          if ($thumb.length) {
+            container.append($thumb);
+          } else {
+            console.warn(`No cached thumb for ID ${id}`);
+          }
+
+          // Otherwise, treat it as a URL or relative path and build a generic thumb
+        } else if (/\.(jpe?g|png|gif|webp|svg)$/i.test(id)) {
+          const thumbHtml = `
+            <li class="all_pics__item all_pics__item--url" data-id="${id}">
+              <img title="External image" src="${id}" alt=""/>
+              <p>
+                <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
+              </p>
+            </li>`;
+          container.append(thumbHtml);
+        }
+      });
+    }
 
     if (jQuery.ui) {
       $('.all_pics').sortable({
         update: function() {
           const imgOrder = $(this)
-            .sortable('toArray', { attribute: 'class' })
-            .toString()
-            .replace(/all_pics__item id/g, '')
-            .replace(/ ui-sortable-handle/g, '');
+            .sortable('toArray', { attribute: 'data-id' })
+            .toString();
           $(this).closest('div').prev().val(imgOrder);
         }
       });
     }
 
+
+
+    // respond to manual deletions or additions of ids in a field
     $thumbInputs.on('input', debounce(function() {
       const $input = $(this);
       const container = $input.next().find('.all_pics');
       const value = $input.val().split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
 
       const currentIds = container.find('.all_pics__item').map(function() {
-        return this.className.replace(/.*id(\d+).*/, '$1');
+        return $(this).attr('data-id');
       }).get();
 
       // Remove missing thumbs
       currentIds.forEach(id => {
         if (!value.includes(id)) {
-          container.find(`.id${id}`).remove();
+          container.find(`[data-id="${id}"]`).remove();
         }
       });
 
+      // recreate thumbs to suit current ids
+      // calls php all_pic_ajax_get_thumbs()
       const newIds = value.filter(id => !currentIds.includes(id));
       if (!newIds.length) return;
+      sendAsyncEvent({
+        event: 'all_pic',
+        step: 'get_thumbs',
+        ids: newIds.join(','),
+      }, function(response) {
+        //console.log('response:', response);
 
-      // Fetch thumbs
-      $.ajax({
-        url: '/textpattern/index.php',
-        method: 'POST',
-        data: {
-          event: 'all_pic',
-          step: 'get_thumbs',
-          ids: newIds.join(',')
-        },
-        success: function(html) {
-          const $temp = $('<div>').html(html);
-          newIds.forEach(function(id) {
-            const $thumb = $temp.find(`.id${id}`);
-            if ($thumb.length) {
-              container.append($thumb);
-            } else {
-              console.warn(`No thumb found in Ajax for id ${id}`);
-            }
-          });
-        },
-        error: function(xhr) {
-          console.error('Ajax thumb fetch failed:', xhr.responseText);
+        if (response.trim()) {
+          // Add the returned thumbs to the hidden store
+          $('#all_pic_store').append(response);
+
+          // Now refresh from input so they appear in correct order
+          refreshThumbsFromInput($input, container);
+        } else {
+          console.warn(`No thumbs returned for IDs: ${newIds.join(', ')}`);
         }
-      });
+      }, 'html');
+
     }, 400));
 
     $('body').on('click', '.all_pics__add, .all_pics__edit', function() {
       // assign url to each
       const isAdd = $(this).hasClass('all_pics__add');
-      const imageId = !isAdd ? $(this).closest('.all_pics__item').attr('class').replace(/.*id(\d+).*/, '$1') : '';
+      const imageId = isAdd ? '' : $(this).closest('.all_pics__item').attr('data-id');
       const iframeUrl = isAdd ?
         'index.php?event=image' :
         `index.php?event=image&step=image_edit&id=${imageId}`;
@@ -124,6 +150,9 @@ $(document).ready(function() {
           </div>`
         );
       }
+
+      window.scrollTo(0, 0);
+
 
       // Add control panel
       // Use the current language title of each specified custom field, and set up identifiers
@@ -159,6 +188,7 @@ $(document).ready(function() {
         return false;
       });
 
+
       $('#sideView').on('load', function() {
         const iframe = $('#sideView').contents();
 
@@ -171,8 +201,8 @@ $(document).ready(function() {
         } else {
           $('body').removeClass('all_pics__edit--is-active');
         }
-
-        iframe.find('head').append('<link rel="stylesheet" href="/textpattern/plugins/all_pic/side-view-overrides.css">');
+        iframe.find('body').addClass('all_pic_modified');
+        //iframe.find('head').append('<link rel="stylesheet" href="plugins/all_pic/side-view-overrides.css">');
         iframe.find('#current-page').remove();
 
         $('#sideView_container header [data-name]').each(function() {
@@ -192,7 +222,6 @@ $(document).ready(function() {
                 temporaryThumb(targetContainer, sourceId, sourceUrl);
               }
             });
-
             $targetInput.val(ids);
 
             if (isShortcode) {
@@ -203,9 +232,8 @@ $(document).ready(function() {
               $('#sideView_container .all_pics').sortable({
                 update: function() {
                   const order = $(this)
-                    .sortable('toArray', { attribute: 'class' })
+                    .sortable('toArray', { attribute: 'data-id' })
                     .toString()
-                    .replace(/all_pics__item id/g, '')
                     .replace(/ ui-sortable-handle/g, '');
                   $targetInput.val(order);
                   $('#shortcodeOut').val(`${shortcodeBase}id="${order}" />`);
@@ -225,7 +253,7 @@ $(document).ready(function() {
     $('body').on('click', '.all_pics__delete', function() {
       const $item = $(this).closest('.all_pics__item');
       const $input = $item.closest('div').prev();
-      const id = $item.attr('class').replace(/.*id(\d+).*/, '$1');
+      const id = $item.attr('data-id');
       const ids = $input.val().split(',');
       const index = ids.indexOf(id);
       if (index !== -1) ids.splice(index, 1);
@@ -236,15 +264,24 @@ $(document).ready(function() {
   }
 
   function temporaryThumb(container, id, src) {
-    container.append(
-      `<li class="all_pics__item id${id}">
-        <img src="${src}" />
-        <p>
-          <a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="${editText}">${editText}</a>
-          <a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a>
-        </p>
-      </li>`
-    );
+    const thumbHtml = `
+    <li class="all_pics__item" data-id="${id}">
+      <img title="Drag to reorder" src="${src}" alt=""/>
+      <p>
+        <span class="all_pics__icon"><a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="${editText}">${editText}</a></span>
+        <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
+      </p>
+    </li>
+  `;
+
+    container.append(thumbHtml);
+
+    // Also append to the hidden store to persist through reloads
+    const $store = $('#all_pic_store');
+    if ($store.length && !$store.find(`[data-id="${id}"]`).length) {
+      $store.append(thumbHtml);
+    }
+
   }
 });
 

@@ -1,87 +1,134 @@
 <?php
-if(@txpinterface == 'admin') {
-	register_callback('all_pic','article');
-	register_callback('all_pic_css','admin_side','head_end');
-	register_callback('all_pic_js_config', 'admin_side', 'head_end');
-	register_callback('all_pic_js', 'admin_side', 'head_end');
-	register_callback('all_pic_ajax_get_thumbs', 'all_pic', 'get_thumbs');
-//register_callback('all_pic_ajax_get_thumbs', 'admin-ajax', 'all_pic_get_thumbs');
+if (txpinterface === 'admin') {
+	new all_pic();
 }
 
-function all_pic_prefs() {
-	return
-		array(
-			'thumbFields' => '#article-image, #custom-5,#custom-6', // fields to be used (comma separated | use #custom-n for custom fields)
-			'shortcodeBase' => '<txp::gallery ', // your shortcode template (omit the tag-closer: />)
-			'addImages' => gTxt('Add Images'), // text for "Choose images" link and button
-			'deleteText' => gTxt('Delete image'), // text and title for "delete image" button
-			'editText' => gTxt('Edit image'), // text and title for "edit image" button"
-			'closeText' => gTxt('Close SideView'), // text for "Close SideView" link"
-		);
+class all_pic {
+protected $privs = '1,2';
+protected $pluginpath = 'plugins';
+protected $event = __CLASS__;
+
+public static function prefs() {
+	return array(
+		'thumbFields' => escape_js(get_pref('all_pic_fields')),
+		'shortcodeBase' => escape_js(get_pref('all_pic_shortcode')),
+
+		'addImages' => 'Add Images',
+		'deleteText' => 'Exclude image',
+		'editText' => 'Edit image',
+		'closeText' => 'Close SideView',
+	);
 }
 
-function all_pic_js_config() {
-	global $event;
-	if ($event !== 'article') return;
-
-	$prefs = all_pic_prefs();
-	$prefs['thumb_markup'] = all_pic_build_thumb();
+public static function js_config() {
+	$prefs = self::prefs();
+	$prefs['thumb_markup'] = self::all_pic_build_thumb();
 
 	echo '<script>';
 	echo 'window.allPicConfig = ' . json_encode($prefs) . ';';
 	echo '</script>';
 }
 
-function all_pic_js() {
-	global $event;
-	if ($event !== 'article') return;
+/**
+ * constructor
+ */
+public function __construct() {
+	global $event, $step, $path_to_site;
 
-	echo '<script defer src="/textpattern/plugins/all_pic/all_pic.js"></script>';
+	add_privs('plugin_prefs.'.$this->event, $this->privs);
+	add_privs($this->event, $this->privs);
+	add_privs('prefs.'.$this->event, $this->privs);
+
+	register_callback(array($this, 'adminPrefs'), 'plugin_prefs.'.$this->event);
+	register_callback(array($this, 'install'), 'plugin_lifecycle.'.$this->event);
+
+	// css is also used to modify the prefs panel, so loads on every admin page
+	register_callback(array($this, 'all_pic_css'), 'admin_side', 'head_end');
+
+	register_callback(array($this, 'all_pic_ajax_get_thumbs'), 'all_pic', 'get_thumbs');
+
+	if ($event === 'article' && has_privs('article.edit.own')) {
+		register_callback(array($this, 'js_config'), 'admin_side', 'body_end');
+		register_callback(array($this, 'all_pic_js'), 'admin_side', 'body_end');
+		register_callback(array($this, 'all_pic_build_thumb'), 'admin_side', 'body_end');
+		register_callback(array($this, 'all_pic_render_thumbs'), 'admin_side', 'article');
+	}
+
+	$this->pluginpath = str_replace($path_to_site, '..', PLUGINPATH);
+	if (get_pref('all_pic_fields', null) === null)
+		set_pref('all_pic_fields', '#article-image', $this->event, PREF_PLUGIN, 'longtext_input', 500, PREF_PRIVATE);
+	if (get_pref('all_pic_shortcode', null) === null)
+		set_pref('all_pic_shortcode', '<txp::gallery ', $this->event, PREF_PLUGIN, 'longtext_input', 700, PREF_PRIVATE);
+
 }
 
+/**
+ * inject css
+ *
+ * @return string CSS style link
+ */
 function all_pic_css() {
-	global $event;
-	if($event != 'article') {
-		return;
+
+	if (class_exists('\Textpattern\UI\Style')) {
+		echo Txp::get('\Textpattern\UI\Style')->setSource("$this->pluginpath/all_pic/all_pic.css"), n;
+	} else {
+		echo n, <<<EOCSS
+		<link rel="stylesheet" media="screen" href="$this->pluginpath/all_pic/all_pic.css">
+		EOCSS;
 	}
-	echo '<link rel="stylesheet" href="/textpattern/plugins/all_pic/all_pic.css">';
 }
 
-function all_pic_render_thumbs(array $ids = []) {
-	$image_path = hu . get_pref('img_dir');
-	$prefs = all_pic_prefs();
-	$markup = [];
-
-	$ids = array_filter($ids, 'is_numeric');
-	if (empty($ids)) return '';
-
-	$escaped = implode(',', array_map('intval', $ids));
-	$rs = safe_rows('ext,id,thumbnail', 'txp_image', 'id IN (' . $escaped . ')');
-
-	if ($rs) {
-		$rnd_number = '?' . time();
-
-		foreach ($rs as $a) {
-			extract($a);
-			$image = ($thumbnail == 0) ? $id . $ext . $rnd_number : $id . 't' . $ext . $rnd_number;
-
-			$markup[] =
-				'<li class="all_pics__item id' . $id . '">' .
-				'<img src="' . $image_path . '/' . $image . '" alt="" />' .
-				'<p>' .
-				'<a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="' . $prefs['editText'] . '">' . $prefs['editText'] . '</a>' .
-				'<a class="ui-icon ui-icon-close all_pics__delete" href="#" title="' . $prefs['deleteText'] . '">' . $prefs['deleteText'] . '</a>' .
-				'</p>' .
-				'</li>';
-		}
+/**
+ * inject the js
+ *
+ * @return string HTML &lt;script&gt; tag
+ */
+function all_pic_js() {
+	if (class_exists('\Textpattern\UI\Script')) {
+		echo Txp::get('\Textpattern\UI\Script')->setRoute(array('article'))->setSource("$this->pluginpath/all_pic/all_pic.js"), n;
+	} else {
+		echo n.'<script defer src="'.$this->pluginpath.'/all_pic/all_pic.js"></script>';
 	}
-
-	return implode('', $markup);
 }
 
-function all_pic_build_thumb() {
-	global $prefs, $step;
-	extract(all_pic_prefs());
+/**
+ * installs prefs if not already defined
+ *
+ * @param string $evt Admin-side event
+ * @param string $stp Admin-side step
+ */
+public function install($evt = '', $stp = '') {
+	if ($stp == 'deleted') {
+		safe_delete('txp_prefs', "name LIKE 'all\_pic\_%'");
+		safe_delete('txp_lang', "name = 'instructions\_article\_image\_select'");
+	} elseif ($stp == 'installed') {
+		safe_update('txp_prefs', "event='".$this->event."'", "name LIKE 'all\_pic\_%'");
+
+		if (get_pref('all_pic_limit', null) !== null)
+				safe_delete('txp_prefs', "name='all\_pic\_limit'");
+	}
+}
+
+/**
+ * redirect to the preferences panel
+ */
+public function adminPrefs() {
+		header('Location: ?event=prefs#prefs_group_all_pic');
+		echo
+				'<p id="message">'.n.
+				'   <a href="?event=prefs#prefs_group_all_pic">'.gTxt('continue').'</a>'.n.
+				'</p>';
+}
+
+/**
+ * determine field inputs
+ * prepare thumbnail ids
+ */
+public static function all_pic_build_thumb() {
+	$prefs = all_pic::prefs();
+	global $step;
+	//global $prefs, $step;
+	extract($prefs);
 
 	$article_id = gps('ID');
 	$fields_array = explode(",", $thumbFields);
@@ -112,54 +159,53 @@ function all_pic_build_thumb() {
 			$ids[] = trim($group);
 		}
 	}
-
-	return all_pic_render_thumbs($ids);
+	return self::all_pic_render_thumbs($ids); // static call to method
 }
 
-function all_pic () {
-	global $event;
+/**
+ * prepare thumbnails html
+ */
+public static function all_pic_render_thumbs(array $ids = []) {
+	$image_path = hu . get_pref('img_dir');
+	$prefs = all_pic::prefs();
+	$markup = [];
 
-	if($event != 'article') {
-		return;
+	$ids = array_filter($ids, 'is_numeric');
+	if (empty($ids)) return '';
+
+	$escaped = implode(',', array_map('intval', $ids));
+	$rs = safe_rows('ext,id,thumbnail', 'txp_image', 'id IN (' . $escaped . ')');
+
+	if ($rs) {
+		$rnd_number = '?' . time();
+
+		foreach ($rs as $a) {
+			extract($a);
+			$image = ($thumbnail == 0) ? $id . $ext . $rnd_number : $id . 't' . $ext . $rnd_number;
+
+			$markup[] =
+				'<li class="all_pics__item" data-id="' . $id . '">' .
+				'<img title="Drag to reorder" src="' . $image_path . '/' . $image . '" alt="" />' .
+				'<p>' .
+				'<span class="all_pics__icon"><a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="' . $prefs['editText'] . '">' . $prefs['editText'] . '</a></span>' .
+				'<span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="' . $prefs['deleteText'] . '">' . $prefs['deleteText'] . '</a></span>' .
+				'</p>' .
+				'</li>';
+		}
 	}
-	extract(all_pic_prefs());
-	$all_pic_build_thumb = all_pic_build_thumb();
-
+	return implode('', $markup);
 }
 
-
-function all_pic_ajax_get_thumbs()
-{
-	// if (!is_logged_in()) {
-	// 	exit('Not authorized');
-	// }
-//
-	// if (!has_privs('article.edit')) return;
-//
-	// $ids = gps('ids');
-	// if (!$ids) return;
-//
-	// $idArray = explode(',', $ids);
-	// $markup = all_pic_render_thumbs($idArray);
-	// echo $markup;
-	// exit;
-
-
-	if (!is_logged_in()) {
-			exit('Not authorized');
-	}
+/**
+ * called by a direct user-input change to a field
+ */
+public  function all_pic_ajax_get_thumbs() {
 
 	$ids = gps('ids');
-	if (!$ids) {
-			exit('No IDs provided');
-	}
+	$idArray = array_filter(array_map('trim', explode(',', $ids)));
 
-	$idArray = explode(',', $ids);
-	echo all_pic_render_thumbs($idArray);
+	echo self::all_pic_render_thumbs($idArray);
 	exit;
 
-	// 	header('Content-Type: text/plain');
-	// echo "THUMB AJAX WORKS!";
-	// exit;
-
+	}
 }

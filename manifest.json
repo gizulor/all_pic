@@ -1,9 +1,9 @@
 {
     "version": "0.1",
-    "type": "4",
-    "order": "5",
+    "type": 4,
+    "order": 5,
     "author": "Gary Venter",
     "author_uri": "https:\/\/github.com\/gizulor",
     "description": "Find images and add them to fields in the Write tab.",
-    "flags": 0
+    "flags": 3
 }

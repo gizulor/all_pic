@@ -3,6 +3,7 @@
   left: 0;
   top: 4em;
   width: 16ch;
+  display: none;
 }
 
 #sideView {
@@ -52,7 +53,7 @@
 
     @media (min-width: 1279px) {
       display: grid;
-      grid-template-columns: auto 1fr auto;//repeat(auto-fill, minmax(24ch, 1fr));
+      grid-template-columns: auto 1fr auto; //repeat(auto-fill, minmax(24ch, 1fr));
       gap: 0 1em;
       align-items: baseline;
     }
@@ -119,11 +120,7 @@
   grid-template-columns: auto;
 
   /* at most 2 */
-
-&:has(li:nth-last-child(-n+2):first-child, li:nth-last-child(-n+2):first-child ~ li) {
-
-}
-
+  &:has(li:nth-last-child(-n+2):first-child, li:nth-last-child(-n+2):first-child ~ li) {}
 
   /* at least 3 */
   &:has(li:nth-last-child(n+3), li:nth-last-child(n+3) ~ li) {
@@ -132,38 +129,24 @@
 
   &__item {
     margin-block: 0;
-    display: grid;
-    grid-template-rows: subgrid;
-    grid-row: span 2;
-    gap: 0;
     position: relative;
 
     img {
       cursor: move;
-      //align-self: end;
+    }
+
+    &--url img {
+      cursor: initial;
     }
 
     p {
       margin: 0;
       position: absolute;
-      right: 0;
+      left: .25em;
+      top: .25em;
       display: flex;
       gap: .5em;
     }
-  }
-}
-
-
-a.all_pics__delete,
-a.all_pics__edit {
-  opacity: 0;
-
-  .all_pics__item:hover & {
-    opacity: 1;
-  }
-
-  &:hover {
-    filter: invert(1);
   }
 }
 
@@ -174,4 +157,54 @@ a.all_pics__edit {
   span {
     transform: rotateZ(90deg);
   }
+}
+
+.all_pics__icon {
+  display: inline-block;
+  background-color: var(--clr-bkgd);
+  border-radius: 50%;
+  height: 16px;
+  opacity: 0;
+  transition: opacity .3s ease;
+
+  .all_pics__item:hover & {
+    opacity: 1;
+  }
+
+  .all_pics__edit {
+    transform: scale(.8);
+  }
+
+  .all_pics__delete,
+  .all_pics__edit {
+    // filter: invert(1);
+  }
+}
+
+.all_pic_modified {
+  &.content {
+    @media (max-width: 47em) {
+      font-size: smaller;
+    }
+
+    padding: 0;
+  }
+
+  .txp-header,
+  .txp-footer,
+  .txp-list-col-tag-build {
+    display: none;
+  }
+}
+
+// admin prefs additions
+#prefs_group_all_pic label:after{
+  display: block;
+  color: var(--clr-text-placeholder);
+}
+label[for="all_pic_fields"]:after {
+  content: 'eg. #article-image, #custom-1, #custom-3';
+}
+label[for="all_pic_shortcode"]:after {
+  content: "(omit out the closing '/>' tag)";
 }
