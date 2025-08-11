@@ -130,7 +130,9 @@ $(document).ready(function() {
 
     }, 400));
 
+    // SideView actions
     $('body').on('click', '.all_pics__add, .all_pics__edit', function() {
+      window.scrollTo(0, 0);
       // assign url to each
       const isAdd = $(this).hasClass('all_pics__add');
       const imageId = isAdd ? '' : $(this).closest('.all_pics__item').attr('data-id');
@@ -145,13 +147,12 @@ $(document).ready(function() {
       } else {
         // Otherwise, create it fresh
         $('.txp-body').append(
-          `<div id="sideView_container">
+          `<div id="sideView_container" role="dialog">
             <iframe id="sideView" src="${iframeUrl}" frameborder="0"></iframe>
           </div>`
         );
       }
 
-      window.scrollTo(0, 0);
 
 
       // Add control panel
@@ -179,6 +180,7 @@ $(document).ready(function() {
           </div>
         </header>`;
 
+      // reinstate header if we've been editing an image in SideView
       if ($('#sideView_container > header').length == 0) {
         $('#sideView_container').prepend(thumbHeader);
       }
@@ -201,9 +203,9 @@ $(document).ready(function() {
         } else {
           $('body').removeClass('all_pics__edit--is-active');
         }
+
         iframe.find('body').addClass('all_pic_modified');
-        //iframe.find('head').append('<link rel="stylesheet" href="plugins/all_pic/side-view-overrides.css">');
-        iframe.find('#current-page').remove();
+        iframe.find('#current-page').remove(); // screws things up
 
         $('#sideView_container header [data-name]').each(function() {
           const fieldName = $(this).attr('data-name');
@@ -236,11 +238,12 @@ $(document).ready(function() {
                     .toString()
                     .replace(/ ui-sortable-handle/g, '');
                   $targetInput.val(order);
-                  $('#shortcodeOut').val(`${shortcodeBase}id="${order}" />`);
+                  $('#shortcodeOut').val(`${shortcodeBase}id="${order}" />`).select();
                 }
               });
             }
 
+            // deselect selected checkboxes
             iframe.find('tr.selected').removeClass('selected').find('input').prop('checked', false);
             iframe.find('.txp-list-col-multi-edit input').prop('checked', false);
           });

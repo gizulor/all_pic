@@ -1,3 +1,11 @@
+//temp
+.cf-video,
+.cf-links-to-url,
+.cf-test,
+.cf-details {
+  display: none;
+}
+
 #all_pic_store {
   position: absolute;
   left: 0;
@@ -10,12 +18,15 @@
   width: 100%;
   height: 100%;
 }
-
+// #page-article:has(#sideView) {
+// padding: 4em 2% 0;
+// }
 .txp-body:has(#sideView) {
   @media (min-width: 1280px) {
     max-width: 100%;
     display: grid;
     gap: 4%;
+
     grid-template-columns: minmax(420px, 1280px) minmax(360px, 1280px);
   }
 }
@@ -31,11 +42,18 @@
     z-index: 10000;
     width: max(400px, 50vw);
     top: 0;
-    height: 100vh;
+    height: calc(100vh - 2em);
     left: 0;
+    resize: both;
+    overflow: visible;
     box-shadow: 0 0 1.5em rgba(0, 0, 0, 0.5);
     background: var(--clr-bkgd);
     padding: .5em;
+    header > p {
+      position: absolute;
+      right: 1.5em;
+      top: .5em;
+    }
   }
 
   @media (max-width: 980px) {
@@ -120,7 +138,9 @@
   grid-template-columns: auto;
 
   /* at most 2 */
-  &:has(li:nth-last-child(-n+2):first-child, li:nth-last-child(-n+2):first-child ~ li) {}
+  &:has(li:nth-last-child(-n+2):first-child, li:nth-last-child(-n+2):first-child ~ li) {
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  }
 
   /* at least 3 */
   &:has(li:nth-last-child(n+3), li:nth-last-child(n+3) ~ li) {

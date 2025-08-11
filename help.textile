@@ -5,7 +5,7 @@ h1. Overview
 * In the @Write@ panel, find and add images to the @Article Image@ field or any specified @custom field@.
 * The default @Images@ panel opens in a *SideView*, providing full upload, edit and search capabilities.
 * Build gallery @shortcode@s for insertion into any textarea.
-* Thumbnail previews, reordered via dragging.
+* Thumbnails adjust size according to quantity, and can be reordered via dragging.
 
 h2. Requirements
 

@@ -55,6 +55,7 @@ public function __construct() {
 	}
 
 	$this->pluginpath = str_replace($path_to_site, '..', PLUGINPATH);
+
 	if (get_pref('all_pic_fields', null) === null)
 		set_pref('all_pic_fields', '#article-image', $this->event, PREF_PLUGIN, 'longtext_input', 500, PREF_PRIVATE);
 	if (get_pref('all_pic_shortcode', null) === null)
