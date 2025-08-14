@@ -186,7 +186,7 @@ public static function all_pic_render_thumbs(array $ids = []) {
 
 			$markup[] =
 				'<li class="all_pics__item" data-id="' . $id . '">' .
-				'<img title="Drag to reorder" src="' . $image_path . '/' . $image . '" alt="" />' .
+				'<img title="Drag (' . $id . ') to relocate" src="' . $image_path . '/' . $image . '" alt="" />' .
 				'<p>' .
 				'<span class="all_pics__icon"><a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="' . $prefs['editText'] . '">' . $prefs['editText'] . '</a></span>' .
 				'<span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="' . $prefs['deleteText'] . '">' . $prefs['deleteText'] . '</a></span>' .

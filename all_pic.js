@@ -275,7 +275,7 @@ $(document).ready(function() {
   function temporaryThumb(container, id, src) {
     const thumbHtml = `
     <li class="all_pics__item" data-id="${id}">
-      <img title="Drag to reorder" src="${src}" alt=""/>
+      <img title="Drag (${id}) to relocate" src="${src}" alt=""/>
       <p>
         <span class="all_pics__icon"><a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="${editText}">${editText}</a></span>
         <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
