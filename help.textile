@@ -12,7 +12,7 @@ h2. Requirements
 
 * Textpattern 4.8.0+
 * A modern web browser
-* Image thumbnails need to be available in your @image/@ directory
+* Image thumbnails need to be available in your @images/@ directory
 
 h2. Installation
 
