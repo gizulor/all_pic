@@ -10,7 +10,9 @@ h1. Overview
 
 h2. Requirements
 
-Textpattern 4.8.0+
+* Textpattern 4.8.0+
+* A modern web browser
+* Image thumbnails need to be available in your @image/@ directory
 
 h2. Installation
 
