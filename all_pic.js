@@ -26,7 +26,10 @@ $(document).ready(function() {
   }
 
   all_picjs();
-  textpattern.Relay.register("txpAsyncForm.success", all_picjs);
+  textpattern.Relay.register('txpAsyncForm.success', function() {
+    all_picjs(); // your current re-init
+    initJQUSortable(); // ensure sortable is rebound after partial reload
+  });
 
   function all_picjs() {
     // add UI containers after each image field
@@ -76,16 +79,19 @@ $(document).ready(function() {
       });
     }
 
-    if (jQuery.ui) {
-      $('.all_pics').sortable({
-        update: function() {
-          const imgOrder = $(this)
-            .sortable('toArray', { attribute: 'data-id' })
-            .toString();
-          $(this).closest('div').prev().val(imgOrder);
-        }
-      });
-    }
+
+
+
+
+
+
+
+
+    // make all lists (including any existing shortcode list) sortable
+    initJQUSortable();
+
+
+
 
 
 
@@ -145,6 +151,13 @@ $(document).ready(function() {
         // If already open, update the iframe src
         $('#sideView').attr('src', iframeUrl);
       } else {
+        // remove all_sideview if active
+        if ($('#sideview').length) {
+          $('#sideview').remove();
+          localStorage.setItem('sideView', 'false');
+          $('.sideview__button').removeClass('sideview--active');
+
+        }
         // Otherwise, create it fresh
         $('.txp-body').append(
           `<div id="sideView_container" role="dialog">
@@ -184,6 +197,9 @@ $(document).ready(function() {
       if ($('#sideView_container > header').length == 0) {
         $('#sideView_container').prepend(thumbHeader);
       }
+
+      // (re)bind sortable now that the shortcode UL exists
+      initJQUSortable();
 
       $('#all_pic__close').on('click', function() {
         $('#sideView_container').remove();
@@ -230,17 +246,6 @@ $(document).ready(function() {
               $('#shortcodeOut').show();
               const shortcode = `${shortcodeBase}id="${ids.join(',').replace(/^(,+)/, '')}" />`;
               $('#shortcodeOut').val(shortcode).select();
-
-              $('#sideView_container .all_pics').sortable({
-                update: function() {
-                  const order = $(this)
-                    .sortable('toArray', { attribute: 'data-id' })
-                    .toString()
-                    .replace(/ ui-sortable-handle/g, '');
-                  $targetInput.val(order);
-                  $('#shortcodeOut').val(`${shortcodeBase}id="${order}" />`).select();
-                }
-              });
             }
 
             // deselect selected checkboxes
@@ -248,6 +253,7 @@ $(document).ready(function() {
             iframe.find('.txp-list-col-multi-edit input').prop('checked', false);
           });
         });
+
       });
 
       return false;
@@ -286,6 +292,11 @@ $(document).ready(function() {
     }
 
   }
+
+  if (isChrome()) {
+    $('body').addClass('is-chrome');
+  }
+
 });
 
 function debounce(fn, delay) {
@@ -294,4 +305,65 @@ function debounce(fn, delay) {
     clearTimeout(timer);
     timer = setTimeout(() => fn.apply(this, args), delay);
   };
+}
+
+function resyncFromUl($ul) {
+  const order = $ul.children('.all_pics__item')
+    .map(function() { return $(this).attr('data-id'); })
+    .get()
+    .join(',');
+
+  // Standard galleries
+  const $ct = $ul.closest('.all_pics_container');
+  const $input = $ct.prev('input');
+
+  if ($input.length) {
+    $input.val(order);
+    return;
+  }
+
+  // Shortcode gallery (in SideView header)
+  if ($ul.closest('[data-name="shortcode"]').length) {
+    $('#shortcode').val(order);
+    const base = (window.allPicConfig && window.allPicConfig.shortcodeBase) || '';
+    $('#shortcodeOut').val(`${base}id="${order}" />`);
+  }
+}
+
+function initJQUSortable() {
+  const $lists = $('.all_pics');
+
+  // If we’re re-initializing (after async save / SideView open), destroy old instances
+  try { $lists.filter('.ui-sortable').sortable('destroy'); } catch (e) {}
+
+  $lists.sortable({
+    connectWith: '.all_pics',
+    items: '> .all_pics__item',
+    placeholder: 'all_pics__placeholder',
+    forcePlaceholderSize: true,
+    tolerance: 'pointer',
+    start: function() { $('body').addClass('allpic-dragging'); },
+    stop: function() { $('body').removeClass('allpic-dragging'); },
+
+    // When this UL changes (drop inside it), update its matching input
+    update: function() {
+      resyncFromUl($(this));
+    },
+
+    // When an item is received from another list, update both lists’ inputs
+    receive: function(e, ui) {
+      resyncFromUl($(this)); // destination
+      if (ui.sender) resyncFromUl(ui.sender); // source
+    }
+  }).disableSelection();
+}
+
+
+
+function agentHas(keyword) {
+  return navigator.userAgent.toLowerCase().search(keyword.toLowerCase()) > -1;
+}
+
+function isChrome() {
+  return agentHas("CriOS") || agentHas("Chrome") || !!window.chrome;
 }

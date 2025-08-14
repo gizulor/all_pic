@@ -1,10 +1,3 @@
-.cf-video,
-.cf-links-to-url,
-.cf-test,
-.cf-details {
-  display: none;
-}
-
 #all_pic_store {
   position: absolute;
   left: 0;
@@ -119,20 +112,29 @@
   height: min-content;
 }
 
+.txp-form-field-label,
+.txp-form-field-value {
+  max-width: 100%;
+}
+
+.txp-form-field-value:has(.all_pics) {
+  container-type: inline-size;
+}
+
 .all_pics {
   padding: 0;
   list-style: none;
   display: grid;
   gap: 0.5em;
-  grid-template-columns: auto;
-  /* at most 2 */
-  /* at least 3 */
+  grid-template-columns: 1fr;
 }
-.all_pics:has(li:nth-last-child(-n+2):first-child, li:nth-last-child(-n+2):first-child ~ li) {
+.all_pics:has(li:nth-last-child(n+2):nth-last-child(-n+4):first-child, li:nth-last-child(n+2):nth-last-child(-n+4):first-child ~ li) {
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
 }
-.all_pics:has(li:nth-last-child(n+3), li:nth-last-child(n+3) ~ li) {
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+@container (min-width: 124px) {
+  .all_pics:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  }
 }
 .all_pics__item {
   margin-block: 0;
@@ -168,6 +170,10 @@
   height: 16px;
   opacity: 0;
   transition: opacity 0.3s ease;
+  transform: scale(1);
+}
+.is-chrome .all_pics__icon {
+  height: 17px;
 }
 .all_pics__item:hover .all_pics__icon {
   opacity: 1;
@@ -175,6 +181,7 @@
 .all_pics__icon .all_pics__edit {
   transform: scale(0.8);
 }
+
 .all_pic_modified.content {
   padding: 0;
 }
@@ -185,8 +192,10 @@
 }
 .all_pic_modified .txp-header,
 .all_pic_modified .txp-footer,
-.all_pic_modified .txp-list-col-tag-build {
+.all_pic_modified .txp-list-col-tag-build,
+.all_pic_modified #current-page {
   display: none;
+  visibility: hidden;
 }
 
 #prefs_group_all_pic label:after {
@@ -200,4 +209,16 @@ label[for=all_pic_fields]:after {
 
 label[for=all_pic_shortcode]:after {
   content: "(omit out the closing '/>' tag)";
+}
+
+.all_pics__placeholder {
+  height: calc(100% - 0.5em);
+  border: 2px dashed rgba(0, 0, 0, 0.2);
+  border-radius: 0.5em;
+  margin: 0.25em 0;
+}
+
+/* make empty lists droppable */
+.all_pics:empty {
+  min-height: 2em;
 }

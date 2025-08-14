@@ -5,4 +5,5 @@ A plugin for Textpattern.
 * In the Write panel, find and add images to the Article Image field or any specified custom field.
 * The default Images panel opens in a SideView, providing full upload, edit and search capabilities.
 * Build gallery shortcodes for insertion into any textarea.
-* Thumbnails sizes adjust according to quantity, and can be reordered via dragging. 
+* Thumbnails can be rearranged and moved to other groups via dragging.
+* Thumbnails adjust their size according to the number of siblings.
