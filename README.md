@@ -1,6 +1,8 @@
-<img width="4570" height="2422" alt="allPic" src="https://github.com/user-attachments/assets/b3e351a2-5a3b-4472-b487-3ce101a53afe" />
+<h1>allPic</h1>
 
-A plugin for Textpattern.
+<p>A plugin for Textpattern</p>
+
+<img src="allPic.webp" alt="allPic" width="2896" height="2264"/>
 
 <ul>
   <li>In the <code>Write</code> panel, find and add images to the <code>Article Image</code> field or any specified <code>custom field</code>.</li>
