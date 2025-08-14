@@ -136,19 +136,19 @@
   gap: .5em;
   grid-template-columns: 1fr;
 
-  @container (max-width: 124px) {
-
-    // 2 to 4
-    &:has(li:nth-last-child(n+2):nth-last-child(-n+4):first-child, li:nth-last-child(n+2):nth-last-child(-n+4):first-child ~ li) {
-      grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-    }
-  }
-
   @container (min-width: 124px) {
 
     // more than 2
     &:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
       grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    }
+  }
+
+  @container (min-width: 800px) {
+
+    // more than 2
+    &:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
+      grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
     }
   }
 
@@ -208,11 +208,11 @@
 
 .all_pic_modified {
   &.content {
+    padding: 0;
     @media (max-width: 47em) {
       font-size: smaller;
     }
 
-    padding: 0;
   }
 
   .txp-header,
