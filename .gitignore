@@ -1,8 +1,3 @@
 .DS_Store
-all_pic1.php
-all_pic2.php
-writetabsource.html
-all_pic3.php
-shortcode-examples/gallery-min.css
-shortcode-examples/gallery.css
-shortcode-examples/gallery.txp
+shortcode-examples/
+zipsrc/

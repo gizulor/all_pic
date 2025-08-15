@@ -27,7 +27,7 @@ $(document).ready(function() {
 
   all_picjs();
   textpattern.Relay.register('txpAsyncForm.success', function() {
-    all_picjs(); // your current re-init
+    all_picjs();
     initJQUSortable(); // ensure sortable is rebound after partial reload
   });
 
@@ -51,6 +51,7 @@ $(document).ready(function() {
 
     function refreshThumbsFromInput($input, container) {
       const ids = ($input.val() || '').split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
+
       container.empty();
 
       ids.forEach(function(item) {
@@ -230,16 +231,21 @@ $(document).ready(function() {
           $(this).on('click', function() {
             const targetContainer = $targetInput.parent().find('.all_pics');
             const isShortcode = fieldName === 'shortcode';
-            const ids = ($targetInput.val() || '').split(',');
+            const idsBase = ($targetInput.val() || '').split(',');
+            // remove empty values
+            const ids = idsBase.filter(function(e){return e});
+
 
             iframe.find('tr.selected').each(function() {
               const sourceId = $(this).find('.txp-list-col-id a').text();
               const sourceUrl = $(this).find('.has-thumbnail img').prop('src');
               if (!ids.includes(sourceId)) {
                 ids.push(sourceId);
+
                 temporaryThumb(targetContainer, sourceId, sourceUrl);
               }
             });
+
             $targetInput.val(ids);
 
             if (isShortcode) {
