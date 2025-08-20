@@ -214,13 +214,18 @@ label[for=all_pic_shortcode]:after {
 }
 
 .all_pics__placeholder {
+  min-height: 32px;
   height: calc(100% - 0.5em);
   border: 2px dashed rgba(0, 0, 0, 0.2);
   border-radius: 0.5em;
   margin: 0.25em 0;
 }
 
-/* make empty lists droppable */
-.all_pics:empty {
-  min-height: 2em;
+form:has(.all_pics__item:active) .all_pics:empty,
+form:has(.all_pics__item:focus-visible) .all_pics:empty {
+  min-height: 32px;
+}
+
+.all_pics__item:active img {
+  opacity: 0.5;
 }

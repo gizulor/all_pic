@@ -239,13 +239,27 @@ label[for="all_pic_shortcode"]:after {
 }
 
 .all_pics__placeholder {
-  height: calc(100% - .5em);
+ min-height: 32px;
+ height: calc(100% - .5em);
   border: 2px dashed rgba(0, 0, 0, .2);
   border-radius: .5em;
   margin: .25em 0;
 }
 
-/* make empty lists droppable */
-.all_pics:empty {
-  min-height: 2em;
+
+
+// make empty lists droppable
+form:has(.all_pics__item:active),
+form:has(.all_pics__item:focus-visible), {
+  .all_pics:empty {
+    min-height: 32px;
+  }
+
+}
+
+// differentiate dragged thumbs from other thumbs
+.all_pics__item:active {
+  img {
+    opacity: .5;
+  }
 }
