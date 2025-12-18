@@ -80,3 +80,6 @@ bc.. <txp:if_article_image>
   <txp::gallery id='<txp:custom_field name="article-image" />' />
 </txp:if_article_image>
 
+h2. Shortcode previews in the body field
+
+Once you have one or more shortcodes in amongst your text copy, click within the shortcode, and a *Preview* button will display, allowing you to see (and re-order) your thumbs. Click *Confirm* and your shortcode is updated.

@@ -49,6 +49,146 @@ $(document).ready(function() {
       refreshThumbsFromInput($input, $container);
     });
 
+
+
+
+    // show preview of shortcodes in a textarea
+
+    function findGalleryAtCaret(text, caret) {
+      const open = text.lastIndexOf(`${shortcodeBase}`, caret);
+      if (open === -1) return null;
+
+      const close = text.indexOf('/>', open);
+      if (close === -1) return null;
+
+      // caret must be within the tag bounds
+      if (caret < open || caret > close + 2) return null;
+
+      const tag = text.slice(open, close + 2);
+      return { start: open, end: close + 2, tag };
+    }
+
+    function extractIdsFromGalleryTag(tag) {
+      const m = tag.match(/\bid\s*=\s*(['"])(.*?)\1/i);
+      if (!m) return [];
+      return m[2].split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    }
+
+    function ensurePreviewUI($ta) {
+      if ($ta.parent('.allpic-ta-wrap').length) return;
+
+      $ta.wrap('<div class="allpic-ta-wrap" style="position:relative;"></div>');
+      $ta.before(`
+        <button type="button" class="allpic-preview-btn" style="display:none; z-index:5;margin-bottom: .5em;">
+          <span class="ui-icon ui-icon-notice"></span> shortcode
+        </button>
+      `);
+    }
+
+function updatePreviewButton($ta) {
+      ensurePreviewUI($ta);
+
+      const ta = $ta[0];
+      const caret = ta.selectionStart || 0;
+      const hit = findGalleryAtCaret(ta.value, caret);
+
+      const $btn = $ta.siblings('.allpic-preview-btn');
+
+      if (hit) {
+        $btn.show().data('galleryRange', hit);
+      } else {
+        $btn.hide().removeData('galleryRange');
+      }
+    }
+
+
+    const $bodyTa = $('#body'); // adjust if needed
+    $bodyTa.on('click keyup focus', function () {
+      updatePreviewButton($(this));
+    });
+
+    function openGalleryPreview($ta, range) {
+      const ids = extractIdsFromGalleryTag(range.tag);
+
+      // Panel scaffold
+      const $panel = $(`
+        <div class="allpic-gallery-preview" style="position:relative; margin:8px 0; padding:8px; border:1px solid rgba(0,0,0,.15); border-radius:6px;">
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+            <strong>shortcode preview</strong>
+            <button type="button" class="allpic-confirm-btn">Confirm</button>
+            <button type="button" class="allpic-cancel-btn">Close</button>
+          </div>
+          <ul class="all_pics"></ul>
+        </div>
+      `);
+
+      // Put panel above textarea (or top inside wrapper)
+      $ta.closest('.allpic-ta-wrap').prepend($panel);
+
+      const $ul = $panel.find('.all_pics');
+
+      // Ensure thumbs exist in store: fetch any missing numeric IDs
+      const missing = ids.filter(id => /^\d+$/.test(id) && $('#all_pic_store').find(`[data-id="${id}"]`).length === 0);
+
+      function renderFromIds() {
+        $ul.empty();
+        ids.forEach(id => {
+          if (/^\d+$/.test(id)) {
+            const $thumb = $('#all_pic_store').find(`[data-id="${id}"]`).clone();
+            if ($thumb.length) $ul.append($thumb);
+          }
+        });
+        initJQUSortable(); // your existing sortable init (connectWith etc.)
+      }
+
+      if (missing.length) {
+        sendAsyncEvent({ event: 'all_pic', step: 'get_thumbs', ids: missing.join(',') }, function (html) {
+          if (html && html.trim()) $('#all_pic_store').append(html);
+          renderFromIds();
+        }, 'html');
+      } else {
+        renderFromIds();
+      }
+
+      // Close
+      $panel.on('click', '.allpic-cancel-btn', function () {
+        $panel.remove();
+      });
+
+      // Confirm: take current order from UL and replace the shortcode in the textarea
+      $panel.on('click', '.allpic-confirm-btn', function () {
+        const order = $ul.children('.all_pics__item')
+          .map(function(){ return $(this).attr('data-id'); })
+          .get()
+          .join(',');
+
+        const base = (window.allPicConfig && window.allPicConfig.shortcodeBase) || '<txp::gallery ';
+        const newTag = `${base}id="${order}" />`;
+
+        const ta = $ta[0];
+        const before = ta.value.slice(0, range.start);
+        const after  = ta.value.slice(range.end);
+        ta.value = before + newTag + after;
+
+        // put caret back into the new tag area
+        const newCaret = range.start + newTag.length;
+        ta.setSelectionRange(newCaret, newCaret);
+        $ta.trigger('input'); // if you want downstream listeners
+
+        $panel.remove();
+      });
+    }
+    $('body').on('click', '.allpic-preview-btn', function () {
+      const $ta = $(this).siblings('textarea');
+      const range = $(this).data('galleryRange');
+      if (!range) return;
+      openGalleryPreview($ta, range);
+    });
+
+
+
+
+
     function refreshThumbsFromInput($input, container) {
       const ids = ($input.val() || '').split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
 

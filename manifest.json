@@ -1,7 +1,7 @@
 {
-    "version": "0.1beta",
-    "type": "4",
-    "order": "5",
+    "version": "0.1.1beta",
+    "type": 4,
+    "order": 5,
     "author": "Gary Venter",
     "author_uri": "https:\/\/github.com\/gizulor",
     "description": "Find, add and arrange images in the Write tab",
