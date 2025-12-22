@@ -9,7 +9,6 @@
     <li>In the <code>Write</code> panel, find and add images to the <code>Article Image</code> field or any specified <code>custom field</code>.</li>
     <li>The default <code>Images</code> panel opens in a <strong>SideView</strong>, providing full upload, edit and search capabilities.</li>
     <li><strong>SideView</strong> is optimised to show more thumbs without scrolling.</li>
-
     <li>Build gallery <code>shortcode</code>s for insertion into any textarea.</li>
     <li>Preview <code>shortcode</code>s in the body field.</li>
     <li>Thumbnails can be rearranged and moved to other groups via dragging.</li>
