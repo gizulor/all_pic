@@ -4,6 +4,7 @@ h1. Overview
 
 * In the @Write@ panel, find and add images to the @Article Image@ field or any specified @custom field@.
 * The default @Images@ panel opens in a *SideView*, providing full upload, edit and search capabilities.
+* *SideView* is optimised to show more thumbs without scrolling.
 * Build gallery @shortcode@s for insertion into any textarea.
 * Preview @shortcode@s in the body field.
 * Thumbnails can be rearranged and moved to other groups via dragging.
