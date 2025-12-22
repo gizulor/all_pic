@@ -5,6 +5,7 @@ h1. Overview
 * In the @Write@ panel, find and add images to the @Article Image@ field or any specified @custom field@.
 * The default @Images@ panel opens in a *SideView*, providing full upload, edit and search capabilities.
 * Build gallery @shortcode@s for insertion into any textarea.
+* Preview @shortcode@s in the body field.
 * Thumbnails can be rearranged and moved to other groups via dragging.
 * Thumbnails adjust their size according to the number of siblings.
 
@@ -16,7 +17,7 @@ h2. Requirements
 
 h2. Installation
 
-If using Textpattern 4.9+, upload the *all_pic.zip* file using the installer in the @Plugins@ tab.
+-If using Textpattern 4.9+, upload the *all_pic.zip* file using the installer in the @Plugins@ tab.- currently unavailable
 
 For all versions of Textpattern, upload an unzipped version to your plugins folder using ftp, and then @Load from drive@ in the @Plugins@ tab.
 
@@ -30,11 +31,13 @@ Visit @allPic@ in the @Preferences@ tab.
 : Enter a comma-separated list of the *CSS IDs* of your input fields. By default, allPic specifies the @#article-image@ field only, but you can add others separated by commas eg. @#article-image, #custom-1, #custom-3@ etc.
 ; *Shortcode*
 : Enter your shortcode, but leave out the closer @/>@ tag eg. @<txp::gallery @ or @<txp::my_shortcode phew="bar" @.
+: Any shortcode that specifies an image is suitable; leave out the image @id@ attribute as this is determined by the plugin.
 
 h2. General Usage
 
 Click on a @Add images@ link; the @Images@ panel will display in *SideView*.
 
+* Drag a thumbnail from the list to a specifed field in your article, or
 * Select the checkboxes of one or more images
 * Click on @Article image@ (or any other custom field) in the side view header
 
