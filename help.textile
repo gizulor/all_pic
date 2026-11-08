@@ -3,10 +3,10 @@ h1. Overview
 *Overview*
 
 * In the @Write@ panel, find and add images to the @Article Image@ field or any specified @custom field@.
-* The default @Images@ panel opens in a *SideView*, providing full upload, edit and search capabilities.
+* The default @Images@ panel opens in a *SideView*, providing upload, edit and search capabilities.
 * *SideView* is optimised to show more thumbs without scrolling.
-* Build gallery @shortcode@s for insertion into any textarea.
-* Preview @shortcode@s in the body field.
+* Drag thumbs from *SideView* straight into a field, or onto the *Body* or *Excerpt* to insert a gallery @shortcode@ at that spot.
+* Preview, reorder and edit the images of a @shortcode@ in the body field.
 * Thumbnails can be rearranged and moved to other groups via dragging.
 * Thumbnails adjust their size according to the number of siblings.
 
@@ -18,49 +18,53 @@ h2. Requirements
 
 h2. Installation
 
--If using Textpattern 4.9+, upload the *all_pic.zip* file using the installer in the @Plugins@ tab.- currently unavailable
+If using Textpattern 4.9+, upload the *all_pic.zip* file using the installer in the @Plugins@ tab.
 
 For all versions of Textpattern, upload an unzipped version to your plugins folder using ftp, and then @Load from drive@ in the @Plugins@ tab.
 
-Once installed, activate the plugin, then visit the @Write panel@. You'll find an @Add images@ link below the @Article image@ field (and any other custom fields if you've added them in all_pic preferences).
+Once installed, activate the plugin, then visit the @Write@ tab. You'll find an @Add images@ link in the @Article Image@ panel.
 
 h2. Configuration
 
 Visit @allPic@ in the @Preferences@ tab.
 
-; *Specify fields*
+; *Specified fields*
 : Enter a comma-separated list of the *CSS IDs* of your input fields. By default, allPic specifies the @#article-image@ field only, but you can add others separated by commas eg. @#article-image, #custom-1, #custom-3@ etc.
-; *Shortcode*
-: Enter your shortcode, but leave out the closer @/>@ tag eg. @<txp::gallery @ or @<txp::my_shortcode phew="bar" @.
+: Only @#article-image@ and @#custom-n@ fields are supported; anything else is ignored.
+; *Gallery shortcode*
+: Enter your shortcode, but leave out the closer @/>@ tag eg. @<txp::gallery @ or @<txp::my_shortcode foo="bar" @.
 : Any shortcode that specifies an image is suitable; leave out the image @id@ attribute as this is determined by the plugin.
+; *Single image shortcode* (optional)
+: Used instead when a single image is dropped, eg. @<txp::figure @. Leave it blank to use the gallery shortcode for single images too.
 
 h2. General Usage
 
-Click on a @Add images@ link; the @Images@ panel will display in *SideView*.
+Click on the @Add images@ link; the @Images@ panel will display in *SideView*.
 
-* Drag a thumbnail from the list to a specifed field in your article, or
-* Select the checkboxes of one or more images
-* Click on @Article image@ (or any other custom field) in the side view header
+* Drag a thumbnail from the list to a specified field in your article, or
+* Select the checkboxes of one or more images and drag any one of them: all the selected images come along, or
+* Select the checkboxes of one or more images, then click on @Article image@ (or any other custom field) in the *SideView* header
+
+An empty field shows a *Drag images here* box to drop onto.
 
 The image thumbs will display below their respective field:
 
-* Change the order of the thumbs by dragging them
+* Change the order of the thumbs by dragging them, or drag them to another field
 * Click on a thumb's delete button to remove it from the list
-* Click on a thumb's edit button, and an @Image edit@ panel will open in side view.
+* Click on a thumb's edit button, and an @Image edit@ panel will open in *SideView*. Once you save your changes (or replace the image or its thumbnail), the thumb updates in your article.
+* An image id with no image behind it (eg. a deleted image) shows as a dashed @123?@ tile, so it isn't silently dropped. Remove it with its delete button.
 
 h2. Shortcodes
 
-Add selected images to your @shortcode@ by clicking the shortcode link in the *SideView* header. This will add image *ids* to the shortcode, with thumb previews you can drag to reorder. When you're ready, copy (or drag) the @shortcode@ into your *Body* field.
+Drag a thumb (or a selection of thumbs) from *SideView* onto the *Body* or *Excerpt* field, and the shortcode is inserted where you drop it, eg. @<txp::gallery id="1,2,3" />@. A single image uses the *Single image shortcode* if you've set one.
 
 If you have not created a form with the same name as your shortcode, Textpattern will ignore it.
-
-*Example shortcode* @<txp::gallery id="1,2,3" />@
 
 Create a form called @gallery.txp@ in @Presentation: Forms@:
 
 bc.. <txp:images id='<txp:yield name="id" />' break="" wraptag="div" class="gallery">
   <figure>
-    <img src="<txp:image_url />" alt="<txp:image_info type="name" />"" />
+    <img src="<txp:image_url />" alt="<txp:image_info type="name" />" />
     <txp:evaluate><txp:image_info escape="textile" wraptag="figcaption" /></txp:evaluate>
   </figure>
 </txp:images>
@@ -86,4 +90,4 @@ bc.. <txp:if_article_image>
 
 h2. Shortcode previews in the body field
 
-Once you have one or more shortcodes in amongst your text copy, click within the shortcode, and a *Preview* button will display, allowing you to see (and re-order) your thumbs. Click *Confirm* and your shortcode is updated.
+Once you have one or more shortcodes in amongst your text copy, click within the shortcode, and a *Preview* button will display, allowing you to see (and re-order) your thumbs. Add more by dragging them in from *SideView*, or remove them with their delete buttons. Click *Confirm* and your shortcode is updated; any other attributes in the tag are kept.

@@ -1,23 +1,217 @@
-#all_pic_store {
-  position: absolute;
-  left: 0;
-  top: 4em;
-  width: 16ch;
-  display: none;
+// all_pic — compiles to all_pic.css (keep the output name: the plugin loads all_pic.css)
+//
+// One file, loaded on every admin page: the Write tab, the Images panel inside
+// SideView's iframe (event=image) and the prefs panel all use it.
+//
+// Specificity vs Hive: Hive's textpattern.css is unlayered and loads first, so an
+// equal-specificity rule here already wins. Where Hive uses longer chains, rules
+// are rooted on an id (#sideView_container, #allpic-gallery-dialog) or a body class
+// (.all_pic_modified, .grid-active) rather than escalated one by one.
+// Don't wrap this file in @layer: layered rules lose to Hive's unlayered ones.
+// ---------------------------------------------------------------------------
+// settings
+// ---------------------------------------------------------------------------
+$wide: 1280px; // SideView sits beside the form at this width and above
+$narrow: 980px; // SideView goes full width
+$phone: 753px;
+$drop-line: 2px dashed rgba(0, 0, 0, 0.18);
+$drop-line-active: 2px dashed rgba(0, 120, 255, 0.25);
+$empty-line: 1px dashed var(--clr-brdr-dark, rgba(0, 0, 0, 0.3));
+
+// ===========================================================================
+// WRITE TAB
+// ===========================================================================
+// --- field layout tweaks ---------------------------------------------------
+.txp-form-field-label,
+.txp-form-field-value {
+  max-width: 100%;
 }
 
-#sideView {
+.txp-form-field-value:has(.all_pics),
+#allpic-gallery-dialog {
+  container-type: inline-size; // thumb grid sizes itself to its own width
+}
+
+.body .txp-form-field-value {
   width: 100%;
-  height: 100%;
 }
 
-.txp-body:has(#sideView) {
-  @media (min-width: 1280px) {
+// --- "Add images" link ------------------------------------------------------
+.all_pics__add {
+  display: block;
+  margin-block-start: 1em;
+
+  span {
+    transform: rotateZ(90deg);
+  }
+
+  // the single link placed before the first configured field
+  &--main {
+    display: inline-block;
+    // margin-block: 0 0.75em;
+  }
+}
+
+// --- thumbnail lists ----------------------------------------------------------
+.all_pics {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5em;
+  grid-template-columns: 1fr;
+  background-color: var(--clr-bkgd-box);
+
+  // empty list: a visible drop target with a hint (text from data-empty)
+  &:empty {
+    min-height: 48px;
+    border: $empty-line;
+    border-radius: 0.25em;
+    place-items: center;
+
+    &::before {
+      content: attr(data-empty);
+      font-size: smaller;
+      opacity: 0.6;
+    }
+  }
+}
+
+// two or more thumbs: switch from one column to a grid
+@container (min-width: 124px) {
+  .all_pics:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  }
+}
+
+@container (min-width: 800px) {
+  .all_pics:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  }
+}
+
+// --- a thumbnail --------------------------------------------------------------
+.all_pics__item {
+  margin-block: 0;
+  position: relative;
+  list-style: none;
+
+  img {
+    cursor: move;
+  }
+
+  &:active img {
+    opacity: 0.5;
+  }
+
+  // edit / exclude icons, top left
+  p {
+    margin: 0;
+    position: absolute;
+    left: 0.25em;
+    top: 0.25em;
+    display: flex;
+    gap: 0.5em;
+  }
+
+  // image given as a path or URL rather than an id
+  &--url img {
+    cursor: initial;
+  }
+
+  // id with no image behind it
+  &--missing {
+    display: grid;
+    place-items: center;
+    min-height: 48px;
+    border: $empty-line;
+    border-radius: 0.25em;
+    cursor: move;
+  }
+}
+
+.all_pics__missing {
+  font-size: smaller;
+  opacity: 0.7;
+}
+
+.all_pics__icon {
+  display: inline-block;
+  background-color: var(--clr-bkgd);
+  border-radius: 50%;
+  height: 16px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  transform: scale(1);
+
+  .is-chrome & {
+    height: 17px;
+  }
+
+  .all_pics__item:hover & {
+    opacity: 1;
+  }
+
+  .all_pics__edit {
+    transform: scale(0.8);
+  }
+}
+
+// --- dragging -----------------------------------------------------------------
+.all_pics__placeholder {
+  min-height: 32px;
+  height: calc(100% - 0.5em);
+  border: 2px dashed rgba(0, 0, 0, 0.2);
+  border-radius: 0.5em;
+  margin: 0.25em 0;
+}
+
+// every list is outlined while a thumb is dragged from SideView…
+.allpic-dropzone {
+  outline: $drop-line;
+  outline-offset: 6px;
+}
+
+// …and the one under the pointer is highlighted (must follow .allpic-dropzone)
+.allpic-dropzone-active {
+  outline: $drop-line-active;
+  outline-offset: 6px;
+}
+
+// stop the iframe stealing mousemove/mouseup during a drag
+.allpic-dragging #sideView {
+  pointer-events: none;
+}
+
+// --- shortcode preview: button in the body textarea + dialog --------------------
+.allpic-preview-btn {
+  right: 100%;
+
+  @media (max-width: $phone) {
+    right: calc(100% - 1em);
+    margin-top: 1em;
+    transform: scale(0.75);
+  }
+}
+
+#allpic-gallery-dialog .all_pics {
+  min-height: 64px; // room to drop into an empty gallery
+}
+
+// ===========================================================================
+// SIDEVIEW (Images panel in an iframe, on the Write tab)
+// ===========================================================================
+@media (min-width: $wide) {
+  .txp-body:has(#sideView) {
     max-width: 100%;
     display: grid;
     gap: 4%;
     grid-template-columns: minmax(420px, 1280px) minmax(360px, 1280px);
   }
+}
+
+#sideView {
+  width: 100%;
+  height: 100%;
 }
 
 #sideView_container {
@@ -26,7 +220,8 @@
   justify-content: stretch;
   height: calc(100vh - 5em);
 
-  @media (max-width: 1279px) {
+  // below $wide SideView floats over the form instead of sitting beside it
+  @media (max-width: $wide - 1) {
     position: fixed;
     z-index: 10000;
     width: max(400px, 50vw);
@@ -37,23 +232,24 @@
     overflow: visible;
     box-shadow: 0 0 1.5em rgba(0, 0, 0, 0.5);
     background: var(--clr-bkgd);
-    padding: .5em;
+    padding: 0.5em;
   }
 
-  @media (max-width: 980px) {
+  @media (max-width: $narrow) {
     width: 100vw;
   }
 
+  // control panel above the iframe
   header {
     position: sticky;
     top: 0;
     margin-top: calc(-1em - 2px);
-    padding: .5em 1em;
+    padding-inline: 1em;
+    padding-block-end: 1em;
     border: 1px solid var(--clr-brdr-lite);
-    border-shadow: 0 .1em .125em #00000026;
     background-color: var(--clr-bkgd-box);
 
-    @media (min-width: 1279px) {
+    @media (min-width: $wide) {
       display: grid;
       grid-template-columns: auto 1fr 1fr;
       gap: 0 1em;
@@ -69,6 +265,7 @@
     margin-bottom: -1em;
   }
 
+  // field targets ("add selected images to …")
   ul {
     list-style: none;
     grid-column-start: 2;
@@ -78,176 +275,35 @@
     gap: 1em;
     flex-wrap: wrap;
 
-    +p {
-      justify-self: end;
-    }
+//     +p {
+//       justify-self: end;
+//     }
 
     a {
       cursor: pointer;
     }
   }
 
-  .all_pics {
-    margin-top: 1em;
-
-    a {
-      display: none;
-    }
-  }
-
-  h5,
-  ul,
-  div {
-    .all_pics__edit--is-active & {
-      display: none;
-    }
-  }
-}
-
-[data-name="shortcode"] {
-  min-width: 36ch;
-  grid-column-start: 1;
-  grid-column-end: -1;
-  container-type: inline-size;
-  margin-bottom: -1em;
-
-  a {
-    cursor: pointer;
-  }
-
-  input {
-    min-width: 36ch;
-  }
-}
-
-#shortcodeOut {
-  display: none;
-  //padding: 1em;
-  height: min-content;
-}
-
-.txp-form-field-label,
-.txp-form-field-value {
-  max-width: 100%;
-}
-
-.txp-form-field-value:has(.all_pics),
-#allpic-gallery-dialog {
-  container-type: inline-size;
-}
-
-.body .txp-form-field-value {
-  //container-type: initial;
-  width: 100%;
-}
-
-.allpic-dropzone-active {
-  outline: 2px dashed rgba(0, 120, 255, .25);
-  outline-offset: 6px;
-}
-
-.allpic-preview-btn {
-  right: calc(100% + .5em);
-
-  @media (max-width: 753px) {
-    right: calc(100% - 1em);
-    margin-top: 1em;
-    transform: scale(.75);
-  }
-}
-
-.allpic-dropzone {
-  outline: 2px dashed rgba(0, 0, 0, .18);
-  outline-offset: 6px;
-
-  #sideView_container & {
-    outline: none;
-  }
-}
-
-.allpic-dragging #sideView {
-  pointer-events: none;
-}
-
-/* prevents iframe stealing mouseup */
-.all_pics {
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: .5em;
-  grid-template-columns: 1fr;
-  background-color: var(--clr-bkgd-box);
-
-  @container (min-width: 124px) {
-
-    // more than 2
-    &:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
-      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-    }
-  }
-
-  @container (min-width: 800px) {
-
-    // more than 2
-    &:has(li:nth-last-child(n+2), li:nth-last-child(n+2) ~ li) {
-      grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-    }
-  }
-
-  &__item {
+  // "or drop them onto Body or Excerpt…"
+  .all_pic__note {
+    grid-column: 1 / -1;
     margin-block: 0;
-    position: relative;
-
-    img {
-      cursor: move;
-    }
-
-    &--url img {
-      cursor: initial;
-    }
-
-    p {
-      margin: 0;
-      position: absolute;
-      left: .25em;
-      top: .25em;
-      display: flex;
-      gap: .5em;
-    }
   }
 }
 
-.all_pics__add {
-  display: block;
-  margin-block-start: 1em;
+// editing an image in SideView: hide the control panel, keep the Close link
+.all_pics__edit--is-active #sideView_container header {
 
-  span {
-    transform: rotateZ(90deg);
+  >p,
+  >ul,
+  .all_pic__banner>p:first-child {
+    display: none;
   }
 }
 
-.all_pics__icon {
-  display: inline-block;
-  background-color: var(--clr-bkgd);
-  border-radius: 50%;
-  height: 16px;
-  opacity: 0;
-  transition: opacity .3s ease;
-  transform: scale(1);
-
-  .is-chrome & {
-    height: 17px;
-  }
-
-  .all_pics__item:hover & {
-    opacity: 1;
-  }
-
-  .all_pics__edit {
-    transform: scale(.8);
-  }
-}
-
+// ===========================================================================
+// IMAGES PANEL inside the SideView iframe (body.all_pic_modified)
+// ===========================================================================
 .all_pic_modified {
   &.content {
     padding: 0;
@@ -264,7 +320,7 @@
   .txp-layout-4col-alt,
   .txp-layout-4col-3span {
     grid-column: span 6;
-    margin-top: .5em;
+    margin-top: 0.5em;
   }
 
   .txp-layout-4col-3span {
@@ -280,10 +336,15 @@
   .txp-header,
   .txp-footer,
   .txp-list-col-tag-build,
-  .tag-build,
-  #current-page {
+  .tag-build {
     display: none;
     visibility: hidden;
+  }
+
+  // paginator: "Page [n] of 3"
+  #current-page {
+    width: 4em;
+    min-width: 0;
   }
 
   .has-thumbnail img {
@@ -295,74 +356,35 @@
   }
 }
 
-// admin prefs additions
-#prefs_group_all_pic label:after {
-  display: block;
-  color: var(--clr-text-placeholder);
-}
-
-label[for="all_pic_fields"]:after {
-  content: 'eg. #article-image, #custom-1, #custom-3';
-}
-
-label[for="all_pic_shortcode"]:after {
-  content: "(omit out the closing '/>' tag)";
-}
-
-.all_pics__placeholder {
-  min-height: 32px;
-  height: calc(100% - .5em);
-  border: 2px dashed rgba(0, 0, 0, .2);
-  border-radius: .5em;
-  margin: .25em 0;
-}
-
-// make empty lists droppable
-form:has(.all_pics__item:active),
-form:has(.all_pics__item:focus-visible),
-{
-.all_pics:empty {
-  min-height: 32px;
-}
-}
-
-// differentiate dragged thumbs from other thumbs
-.all_pics__item:active {
-  img {
-    opacity: .5;
-  }
-}
-
-.all_behive-icons {
-  display: flex;
-  gap: 1em;
-
-  button:first-child {
-    .grid-active & {
-      box-shadow: var(--inset-lolite);
-    }
-  }
-
-  button:last-child {
-    &:not(.grid-active &) {
-      box-shadow: var(--inset-lolite);
-    }
-  }
-}
-
+// --- grid view of the image list (body.grid-active) ------------------------
 .grid-active {
 
-  [type="checkbox"]:not(.ui-checkboxradio),
-  [type="radio"]:not(.ui-checkboxradio) {
-    padding: .5em;
-  }
-
-  .all_behive-icons {
-    position: absolute;
+  [type=checkbox]:not(.ui-checkboxradio),
+  [type=radio]:not(.ui-checkboxradio) {
+    padding: 0.5em;
   }
 
   .txp-body:has(#images_form) {
     max-width: 100%;
+  }
+
+  .txp-list-options {
+    text-align: left;
+    margin: 0;
+
+    button {
+      margin-inline-start: 0;
+    }
+
+    // don't offer the columns the cards never show
+    li:has(input[value=uDate], input[value=tags], input[value=author]) {
+      display: none;
+    }
+  }
+
+  // the table's wrapper scrolls, which would clip the column options dropdown now in the header
+  #images_form .txp-listtables {
+    overflow: visible;
   }
 
   #images_form table {
@@ -372,99 +394,36 @@ form:has(.all_pics__item:focus-visible),
       display: block;
       margin-bottom: 2em;
 
+      // a sort bar rather than column headings; wraps when narrow
       tr {
         display: flex;
-        width: 100%;
-        justify-content: end;
-        border: 0;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.125em 0;
+        background-color: var(--clr-bkgd-box);
+      }
+
+      th {
+        border-top: 0;
+        border-bottom: 0;
+      }
+
+      // column display options, moved here by all_pic.js: right-hand end of the row
+      .all_pic__list-options {
+        margin-inline-start: auto;
+        padding: .125em 1em;
       }
 
       .txp-list-col-multi-edit {
         width: max-content;
-        border: 1px solid var(--clr-brdr-dark);
 
         &:before {
-          content: 'Select all';
+          content: "Select all";
           display: inline-block;
-          margin-right: .5em;
+          margin-right: 0.5em;
           position: relative;
-          bottom: .1em;
+          bottom: 0.1em;
         }
-      }
-    }
-  }
-
-  tbody:has(.has-thumbnail) {
-    padding-top: var(--base-unit);
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-    gap: 3vh 2em;
-    width: 100%;
-
-    tr {
-      display: grid;
-      grid-template-columns: 3ch min-content 1fr;
-      border: 0;
-      //gap: var(--base-unit--ss);
-      background-color: var(--clr-bkgd) !important;
-
-      &.selected {
-        background-color: var(--clr-selected) !important;
-      }
-    }
-
-    td,
-    th {
-      padding: 0;
-    }
-
-
-    .txp-list-col-category {
-      grid-row-start: 2;
-      grid-column-end: -1;
-      justify-self: end;
-      text-align: right;
-      //max-width: 16ch;
-      overflow: hidden;
-      display: -webkit-box;
-      box-orient: vertical;
-      line-clamp: 1;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 1;
-
-    }
-
-    .txp-list-col-name,
-    .has-thumbnail {
-      grid-column: span 3;
-    }
-
-    .txp-list-col-tag-build,
-    .txp-list-col-created,
-    .txp-list-col-author {
-      display: none;
-    }
-
-    .has-thumbnail {
-      grid-row-start: 1;
-      margin-bottom: .25em;
-
-      a .content-image {
-        border: 0;
-      }
-
-      img {
-        aspect-ratio: 1/1;
-        object-fit: cover;
-        height: 100%;
-        width: 100%;
-        object-position: center center;
-        transition: all 1s ease;
-      }
-
-      &:hover img {
-        object-fit: contain;
-        object-position: bottom center;
       }
     }
   }
@@ -480,8 +439,76 @@ form:has(.all_pics__item:focus-visible),
       min-width: auto;
     }
   }
+
+  // each image row becomes a card
+  tbody:has(.has-thumbnail) {
+    padding-top: var(--base-unit);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    gap: 3vh 1.5em;
+    width: 100%;
+
+    tr {
+      display: grid;
+      grid-template-columns: 3ch min-content 1fr;
+      border: 0;
+      background-color: var(--clr-bkgd) !important; // beats Hive's row striping
+
+      &.selected {
+        background-color: var(--clr-selected) !important;
+      }
+    }
+
+    td,
+    th {
+      padding: 0;
+    }
+
+    .txp-list-col-category {
+      grid-row-start: 2;
+      grid-column-end: -1;
+      justify-self: end;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+      margin-inline-start: .5em;
+    }
+
+    .txp-list-col-name,
+    .has-thumbnail {
+      grid-column: span 3;
+    }
+
+    .txp-list-col-tag-build,
+    .txp-list-col-created,
+    .txp-list-col-author {
+      display: none;
+    }
+
+    .has-thumbnail {
+      grid-row-start: 1;
+      margin-bottom: 0.25em;
+
+      a .content-image {
+        border: 0;
+      }
+
+      // actual proportions, sitting on the card's baseline
+      img {
+        aspect-ratio: 1 / 1;
+        object-fit: contain;
+        object-position: bottom left;
+        height: 100%;
+        width: 100%;
+      }
+    }
+  }
 }
 
-.ui-icon-large {
-  width: 36px;
-}
+// ===========================================================================
+// PREFS PANEL
+// ===========================================================================
+
+// nothing here: the help under each all_pic pref comes from the textpack
+// (instructions_all_pic_fields etc.), which TXP shows below the label

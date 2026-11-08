@@ -2,85 +2,106 @@
 
 <p>A plugin for Textpattern</p>
 
-<img src="allPic.webp" alt="allPic" width="3584" height="1920"/>
+<img src="allPic.webp" alt="allPic" width="4350" height="1978" style="object-fit: contain; height: min-content;" />
 
-  <p><strong>Overview</strong></p>
+  <h1>Overview</h1>
+
   <ul>
     <li>In the <code>Write</code> panel, find and add images to the <code>Article Image</code> field or any specified <code>custom field</code>.</li>
     <li>The default <code>Images</code> panel opens in a <strong>SideView</strong>, providing full upload, edit and search capabilities.</li>
     <li><strong>SideView</strong> is optimised to show more thumbs without scrolling.</li>
-    <li>Build gallery <code>shortcode</code>s for insertion into any textarea.</li>
-    <li>Preview <code>shortcode</code>s in the body field.</li>
+    <li>Drag thumbs from <strong>SideView</strong> straight into a field, or onto the <strong>Body</strong> or <strong>Excerpt</strong> to insert a gallery <code>shortcode</code> at that spot.</li>
+    <li>Preview, reorder and edit the images of a <code>shortcode</code> in the body field.</li>
     <li>Thumbnails can be rearranged and moved to other groups via dragging.</li>
     <li>Thumbnails adjust their size according to the number of siblings.</li>
   </ul>
 
-
   <h2>Requirements</h2>
+
   <ul>
     <li>Textpattern 4.8.0+</li>
     <li>A modern web browser</li>
     <li>Image thumbnails need to be available in your <code>images/</code> directory</li>
   </ul>
 
-
   <h2>Installation</h2>
-  <p>If using Textpattern 4.9+, upload the <strong>all_pic.zip</strong> file using the installer in the <code>Plugins</code> tab.</p>
-  <p>For all versions of Textpattern, upload an unzipped version to your plugins folder using ftp, and then <code>Load from drive</code> in the <code>Plugins</code> tab.</p>
-  <p>Once installed, activate the plugin, then visit the <code>Write panel</code>. You’ll find an <code>Add images</code> link below the <code>Article image</code> field (and any other custom fields if you’ve added them in all_pic preferences).</p>
 
+  <p>If using Textpattern 4.9+, upload the <strong>all_pic.zip</strong> file using the installer in the <code>Plugins</code> tab.</p>
+
+  <p>For all versions of Textpattern, upload an unzipped version to your plugins folder using ftp, and then <code>Load from drive</code> in the <code>Plugins</code> tab.</p>
+
+  <p>Once installed, activate the plugin, then visit the <code>Write panel</code>. You&#8217;ll find an <code>Add images</code> link above the first of your image fields (the <code>Article image</code> field unless you&#8217;ve changed the order in all_pic preferences).</p>
 
   <h2>Configuration</h2>
+
   <p>Visit <code>allPic</code> in the <code>Preferences</code> tab.</p>
+
   <dl>
-    <dt><strong>Specify fields</strong></dt>
+    <dt><strong>Specified fields</strong></dt>
     <dd>Enter a comma-separated list of the <strong><span class="caps">CSS</span> IDs</strong> of your input fields. By default, allPic specifies the <code>#article-image</code> field only, but you can add others separated by commas eg. <code>#article-image, #custom-1, #custom-3</code> etc.</dd>
-    <dt><strong>Shortcode</strong></dt>
+    <dd>Only <code>#article-image</code> and <code>#custom-n</code> fields are supported; anything else is ignored.</dd>
+    <dt><strong>Gallery shortcode</strong></dt>
     <dd>Enter your shortcode, but leave out the closer <code>/&gt;</code> tag eg. <code>&lt;txp::gallery </code> or <code>&lt;txp::my_shortcode phew="bar" </code>.</dd>
     <dd>Any shortcode that specifies an image is suitable; leave out the image <code>id</code> attribute as this is determined by the plugin.</dd>
+    <dt><strong>Single image shortcode</strong> (optional)</dt>
+    <dd>Used instead when a single image is dropped, eg. <code>&lt;txp::figure </code>. Leave it blank to use the gallery shortcode for single images too.</dd>
   </dl>
 
-
   <h2>General Usage</h2>
-  <p>Click on a <code>Add images</code> link; the <code>Images</code> panel will display in <strong>SideView</strong>.</p>
+
+  <p>Click on the <code>Add images</code> link; the <code>Images</code> panel will display in <strong>SideView</strong>.</p>
+
   <ul>
-    <li>Drag a thumbnail from the list to a specifed field in your article, or</li>
-    <li>Select the checkboxes of one or more images</li>
-    <li>Click on <code>Article image</code> (or any other custom field) in the side view header</li>
-  </ul>
-  <p>The image thumbs will display below their respective field:</p>
-  <ul>
-    <li>Change the order of the thumbs by dragging them</li>
-    <li>Click on a thumb’s delete button to remove it from the list</li>
-    <li>Click on a thumb’s edit button, and an <code>Image edit</code> panel will open in side view.</li>
+    <li>Drag a thumbnail from the list to a specified field in your article, or</li>
+    <li>Select the checkboxes of one or more images and drag any one of them: all the selected images come along, or</li>
+    <li>Select the checkboxes of one or more images, then click on <code>Article image</code> (or any other custom field) in the <strong>SideView</strong> header</li>
   </ul>
 
+  <p>An empty field shows a <strong>Drag images here</strong> box to drop onto.</p>
+
+  <p>The image thumbs will display below their respective field:</p>
+
+  <ul>
+    <li>Change the order of the thumbs by dragging them, or drag them to another field</li>
+    <li>Click on a thumb&#8217;s delete button to remove it from the list</li>
+    <li>Click on a thumb&#8217;s edit button, and an <code>Image edit</code> panel will open in <strong>SideView</strong>. Once you save your changes (or replace the image or its thumbnail), the thumb updates in your article.</li>
+    <li>An image id with no image behind it (eg. a deleted image) shows as a dashed <code>123?</code> tile, so it isn&#8217;t silently dropped. Remove it with its delete button.</li>
+  </ul>
 
   <h2>Shortcodes</h2>
-  <p>Add selected images to your <code>shortcode</code> by clicking the shortcode link in the <strong>SideView</strong> header. This will add image <strong>ids</strong> to the shortcode, with thumb previews you can drag to reorder. When you’re ready, copy (or drag) the <code>shortcode</code> into your <strong>Body</strong> field.</p>
+
+  <p>Drag a thumb (or a selection of thumbs) from <strong>SideView</strong> onto the <strong>Body</strong> or <strong>Excerpt</strong> field, and the shortcode is inserted where you drop it, eg. <code>&lt;txp::gallery id="1,2,3" /&gt;</code>. A single image uses the <strong>Single image shortcode</strong> if you&#8217;ve set one.</p>
+
   <p>If you have not created a form with the same name as your shortcode, Textpattern will ignore it.</p>
-  <p><strong>Example shortcode</strong> <code>&lt;txp::gallery id="1,2,3" /&gt;</code></p>
+
   <p>Create a form called <code>gallery.txp</code> in <code>Presentation: Forms</code>:</p>
-  <pre><code>&lt;txp:images id='&lt;txp:yield name="id" /&gt;' break="" wraptag="div" class="gallery"&gt;
+
+<pre><code>&lt;txp:images id=&#39;&lt;txp:yield name=&quot;id&quot; /&gt;&#39; break=&quot;&quot; wraptag=&quot;div&quot; class=&quot;gallery&quot;&gt;
   &lt;figure&gt;
-    &lt;img src="&lt;txp:image_url /&gt;" alt="&lt;txp:image_info type="name" /&gt;"" /&gt;
-    &lt;txp:evaluate&gt;&lt;txp:image_info escape="textile" wraptag="figcaption" /&gt;&lt;/txp:evaluate&gt;
+    &lt;img src=&quot;&lt;txp:image_url /&gt;&quot; alt=&quot;&lt;txp:image_info type=&quot;name&quot; /&gt;&quot;&quot; /&gt;
+    &lt;txp:evaluate&gt;&lt;txp:image_info escape=&quot;textile&quot; wraptag=&quot;figcaption&quot; /&gt;&lt;/txp:evaluate&gt;
   &lt;/figure&gt;
 &lt;/txp:images&gt;</code></pre>
+
   <p>Paste the shortcode into an article body field, <strong>Save</strong> and click <strong>View</strong>. Without any css to control the layout, your images will display one above the other.</p>
-  <p>To add layout, include the following to your site’s css:</p>
-  <pre><code>.gallery {
+
+  <p>To add layout, include the following to your site&#8217;s css:</p>
+
+<pre><code>.gallery {
     display: grid;
     gap: 1rem;
     grid-template-columns: repeat(auto-fit, minmax(300px,1fr));
     /* assumes max-width is not already specified in your css */
     img { max-width: 100%;}
   }</code></pre>
+
+
   <p>The images will distribute in rows depending on the width of the gallery. The same shortcode can be used in your form template:</p>
-  <pre><code>&lt;txp:if_article_image&gt;
-  &lt;txp::gallery id='&lt;txp:custom_field name="article-image" /&gt;' /&gt;
+
+<pre><code>&lt;txp:if_article_image&gt;
+  &lt;txp::gallery id=&#39;&lt;txp:custom_field name=&quot;article-image&quot; /&gt;&#39; /&gt;
 &lt;/txp:if_article_image&gt;</code></pre>
 
-
   <h2>Shortcode previews in the body field</h2>
-  <p>Once you have one or more shortcodes in amongst your text copy, click within the shortcode, and a <strong>Preview</strong> button will display, allowing you to see (and re-order) your thumbs. Click <strong>Confirm</strong> and your shortcode is updated.</p>
+
+  <p>Once you have one or more shortcodes in amongst your text copy, click within the shortcode, and a <strong>Preview</strong> button will display, allowing you to see (and re-order) your thumbs. Add more by dragging them in from <strong>SideView</strong>, or remove them with their delete buttons. Click <strong>Confirm</strong> and your shortcode is updated; any other attributes in the tag are kept.</p>

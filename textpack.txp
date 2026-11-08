@@ -2,9 +2,15 @@
 #@language en, en-gb, en-us
 all_pic => allPic
 all_pic_fields => Specified fields
-all_pic_shortcode => Shortcode
+all_pic_shortcode => Gallery shortcode
+all_pic_shortcode_single => Single image shortcode
+instructions_all_pic_fields => Comma-separated field ids, eg. #article-image, #custom-1, #custom-3
+instructions_all_pic_shortcode => Leave out the closing /&gt;, eg. &lt;txp::gallery 
+instructions_all_pic_shortcode_single => Optional: used when a single image is dropped. Leave blank to use the gallery shortcode.
 #@article
-addImages => Add Images
-deleteText => Exclude image
-editText => Edit image
-closeText => Close SideView
+all_pic_add_images => Add Images
+all_pic_exclude_image => Exclude image
+all_pic_edit_image => Edit image
+all_pic_close_sideview => Close SideView
+all_pic_drop_here => Drag images here
+all_pic_sideview_note => or drop them onto Body or Excerpt to insert a shortcode at that spot.

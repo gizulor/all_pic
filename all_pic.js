@@ -1,885 +1,874 @@
-/* To do:
+/* all_pic — find, add and arrange images in the Write tab
+
+To do:
 What if thumbFields aren't numeric:
 /images/my_pic.jpg
 https://example.com/path/to/images/my_pic.jpg
 
-
+07/11/2026 refactor:
+- every handler is bound once (delegated, .allpic namespace), so async saves no longer stack handlers
+- thumbs are cached in a JS Map (id -> markup) and only missing ids are fetched, so a thumb can't be cached twice
+- one parser / writer for field values (tolerates spaces, triggers 'change')
+- sortable: links/icons cancel a drag, 5px drag threshold, lists initialised once
 */
 
-
-$(document).ready(function() {
+(function($) {
+  'use strict';
 
   const prefs = window.allPicConfig || {};
 
-  const thumbFields = prefs.thumbFields?.split(/[ ,]+/) || [];
-  const shortcodeBase = prefs.shortcodeBase || '';
+  const thumbFields = (prefs.thumbFields || '').split(/[ ,]+/).filter(Boolean);
+  const fieldSelector = thumbFields.join(',');
+  const shortcodeBase = prefs.shortcodeBase || '<txp::gallery ';
+  const shortcodeSingle = prefs.shortcodeSingle || ''; // optional: a different shortcode for one image
   const addImages = prefs.addImages || 'Add Images';
   const deleteText = prefs.deleteText || 'Exclude image';
   const editText = prefs.editText || 'Edit image';
   const closeText = prefs.closeText || 'Close SideView';
+  const dropText = prefs.dropText || 'Drag images here';
+  const noteText = prefs.noteText || 'or drop them onto Body or Excerpt to insert a shortcode at that spot.';
 
-  // create a combined jQuery object from all fields
-  const $thumbInputs = $(thumbFields.join(','));
 
-  if (!$('#all_pic_store').length) {
-    $('body').append('<div id="all_pic_store">' + (prefs.thumb_markup || '') + '</div>');
+  /* ---------------------------------------------------------------
+   * ids: one way to read a field, one way to write it
+   * ------------------------------------------------------------- */
+
+  function parseIds(str) {
+    return String(str || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
   }
 
-  all_picjs();
-  textpattern.Relay.register('txpAsyncForm.success', function() {
-    all_picjs();
-    initJQUSortable(); // ensure sortable is rebound after partial reload
-  });
+  // change is deferred so other listeners (e.g. the theme's form 'change' hook)
+  // never run in the middle of a jQuery UI sortable callback
+  function writeIds($input, ids) {
+    $input.val(ids.join(','));
+    setTimeout(() => $input.trigger('change'), 0);
+  }
 
-  function all_picjs() {
-    // add UI containers after each image field
-    thumbFields.forEach(function(selector) {
-      const $input = $(selector);
-      if ($input.next('.all_pics_container').length) return; // already exists
-      //$input.after(`…`);
+  const isNumericId = id => /^\d+$/.test(id);
 
-      $(selector).after(
-        `<div class="all_pics_container">
-          <ul class="all_pics"></ul>
-          <a class="all_pics__add" href="#" title="${addImages}">${addImages} <span class="ui-icon ui-icon-search"></span></a>
-        </div>`
-      );
+  // shortcode opener as set in prefs, always followed by a space
+  const tagBase = b => (b && !/\s$/.test(b) ? b + ' ' : (b || ''));
+  const tagBases = [...new Set([shortcodeBase, shortcodeSingle].filter(Boolean).map(tagBase))];
+
+  // the tag for a set of image ids: single-image shortcode for one (if set), gallery shortcode otherwise
+  function buildTag(ids) {
+    const base = tagBase(ids.length === 1 && shortcodeSingle ? shortcodeSingle : shortcodeBase);
+    return `${base}id="${ids.join(',')}" />`;
+  }
+  const isImageUrl = id => /\.(jpe?g|png|gif|webp|svg)$/i.test(id);
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // field <input>  <->  its thumbnail <ul>
+  function ulFor($input) {
+    return $input.next('.all_pics_container').find('.all_pics');
+  }
+
+  function inputFor($ul) {
+    return $ul.closest('.all_pics_container').prev(fieldSelector || 'input');
+  }
+
+
+  /* ---------------------------------------------------------------
+   * thumb cache (replaces the hidden #all_pic_store)
+   * ------------------------------------------------------------- */
+
+  const thumbCache = new Map(); // id -> <li> markup
+  const inflight = new Map(); // id -> Promise
+  const notFound = new Set(); // ids the server returned nothing for
+
+  function cacheHtml(html) {
+    $('<ul>').html(html || '').children('.all_pics__item').each(function() {
+      const id = String(this.getAttribute('data-id'));
+      if (!thumbCache.has(id)) thumbCache.set(id, this.outerHTML);
     });
+  }
 
-    // add thumbs to each container
-    $('.all_pics').each(function() {
-      const $container = $(this);
-      const $input = $container.parent().prev();
-      refreshThumbsFromInput($input, $container);
-    });
+  function getThumb(id) {
+    id = String(id);
+    return thumbCache.has(id) ? $(thumbCache.get(id)) : null;
+  }
 
+  // fetch only the numeric ids we don't already have (or aren't already fetching)
+  function ensureThumbs(ids) {
+    const wanted = ids.filter(isNumericId);
+    const missing = wanted.filter(id => !thumbCache.has(id) && !inflight.has(id) && !notFound.has(id));
 
-
-
-    // show preview of shortcodes in a textarea
-
-    function findGalleryAtCaret(text, caret) {
-      const open = text.lastIndexOf(`${shortcodeBase}`, caret);
-      if (open === -1) return null;
-
-      const close = text.indexOf('/>', open);
-      if (close === -1) return null;
-
-      // caret must be within the tag bounds
-      if (caret < open || caret > close + 2) return null;
-
-      const tag = text.slice(open, close + 2);
-      return { start: open, end: close + 2, tag };
-    }
-
-    function getCaretCoordsInTextarea(textarea, pos) {
-      const cs = window.getComputedStyle(textarea);
-      const div = document.createElement('div');
-
-      // Mirror textarea styling
-      div.style.position = 'absolute';
-      div.style.visibility = 'hidden';
-      div.style.whiteSpace = 'pre-wrap';
-      div.style.wordWrap = 'break-word';
-      div.style.overflow = 'hidden';
-
-      // Copy key styles
-      const props = [
-        'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'textTransform',
-        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-        'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-        'lineHeight', 'textAlign', 'width'
-      ];
-      props.forEach(p => div.style[p] = cs[p]);
-
-      // Match scroll state
-      div.style.height = cs.height;
-
-      // Content up to caret + marker
-      const text = textarea.value.substring(0, pos);
-      div.textContent = text;
-
-      const span = document.createElement('span');
-      span.textContent = textarea.value.substring(pos) || '.';
-      div.appendChild(span);
-
-      document.body.appendChild(div);
-
-      // Coordinates inside the mirrored box
-      const spanRect = span.getBoundingClientRect();
-      const divRect = div.getBoundingClientRect();
-
-      // Convert to textarea-local coords (top/left inside content box)
-      const top = (spanRect.top - divRect.top) - textarea.scrollTop;
-      const left = (spanRect.left - divRect.left) - textarea.scrollLeft;
-
-      document.body.removeChild(div);
-
-      return { top, left };
-    }
-
-
-    function extractIdsFromGalleryTag(tag) {
-      const m = tag.match(/\bid\s*=\s*(['"])(.*?)\1/i);
-      if (!m) return [];
-      return m[2].split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
-    }
-
-    function ensurePreviewUI($ta) {
-      if (!$ta.parent('.allpic-ta-wrap').length) {
-        $ta.wrap('<div class="allpic-ta-wrap" style="position:relative;"></div>');
-      }
-
-      const $wrap = $ta.parent('.allpic-ta-wrap');
-
-      // ensure a single button exists
-      if (!$wrap.find('.allpic-preview-btn').length) {
-        $wrap.append(`
-          <button type="button" class="allpic-preview-btn" style="position:absolute; display:none; z-index:5;">
-            <span class="ui-icon ui-icon-notice" title="Preview shortcode"></span>
-          </button>
-        `);
-      }
-    }
-
-    function updatePreviewButton($ta) {
-      // enforce only one button on the page (requirement #2)
-      $('.allpic-preview-btn').hide().removeData('galleryRange');
-
-      ensurePreviewUI($ta);
-
-      const ta = $ta[0];
-      const caret = ta.selectionStart || 0;
-      const hit = findGalleryAtCaret(ta.value, caret);
-
-      const $wrap = $ta.parent('.allpic-ta-wrap');
-      const $btn = $wrap.find('.allpic-preview-btn');
-
-      if (!hit) {
-        $btn.hide().removeData('galleryRange');
-        return;
-      }
-
-      // position the button at caret Y (x handled by your CSS)
-      const coords = getCaretCoordsInTextarea(ta, caret);
-
-      $btn
-        .show()
-        .css({ top: (coords.top + 6) + 'px' }) // +6 to align nicely; tweak to taste
-        .data('galleryRange', hit);
-    }
-
-    const $bodyTa = $('#body'); // adjust if needed
-    $bodyTa.on('click keyup focus', function() {
-      updatePreviewButton($(this));
-    });
-    $bodyTa.off('.allpic').on('click.allpic keyup.allpic focus.allpic', function() {
-      updatePreviewButton($(this));
-    });
-
-    function openGalleryPreview($ta, range) {
-      closeGalleryPreview();
-
-      const ids = extractIdsFromGalleryTag(range.tag);
-
-      // create dialog content
-      const $panel = $(`
-        <div id="allpic-gallery-dialog" title="Shortcode preview">
-          <div style="display:flex; gap:.5em; align-items:center; margin-bottom:.5em;">
-            <a class="all_pics__add" href="#" title="${addImages}">${addImages} <span class="ui-icon ui-icon-search"></span></a>
-            <button type="button" class="allpic-confirm-btn">Confirm</button>
-            <button type="button" class="allpic-cancel-btn">Close</button>
-
-          </div>
-          <ul class="all_pics"></ul>
-
-        </div>
-      `);
-
-      $('body').append($panel);
-
-      // position dialog near caret
-      const ta = $ta[0];
-      const caret = ta.selectionStart || 0;
-      const coords = getCaretCoordsInTextarea(ta, caret);
-      const taRect = ta.getBoundingClientRect();
-
-      const top = window.scrollY + taRect.top + coords.top + 24;
-      const left = window.scrollX + taRect.left + 24;
-
-      // create jQuery UI dialog (draggable/resizable)
-      $panel.dialog({
-        modal: false,
-        draggable: true,
-        resizable: true,
-        width: 520,
-        minWidth: 360,
-        position: { my: 'left top', at: `left+${Math.round(left)} top+${Math.round(top)}`, of: window },
-        close: function() { closeGalleryPreview(); }
-      });
-
-      const $ul = $panel.find('.all_pics');
-
-      // Ensure thumbs exist in store: fetch any missing numeric IDs
-      const missing = ids.filter(id => /^\d+$/.test(id) && $('#all_pic_store').find(`[data-id="${id}"]`).length === 0);
-
-      function renderFromIds() {
-        $ul.empty();
-        ids.forEach(id => {
-          if (/^\d+$/.test(id)) {
-            const $thumb = $('#all_pic_store').find(`[data-id="${id}"]`).clone();
-            if ($thumb.length) $ul.append($thumb);
-          }
-        });
-        //initJQUSortable();
-      }
-
-      if (missing.length) {
-        sendAsyncEvent({ event: 'all_pic', step: 'get_thumbs', ids: missing.join(',') }, function(html) {
-          if (html && html.trim()) $('#all_pic_store').append(html);
-          renderFromIds();
+    if (missing.length) {
+      const request = new Promise(resolve => {
+        const xhr = sendAsyncEvent({ event: 'all_pic', step: 'get_thumbs', ids: missing.join(',') }, function(html) {
+          cacheHtml(html);
         }, 'html');
-      } else {
-        renderFromIds();
-      }
 
-      $panel.on('click', '.allpic-cancel-btn', function() {
-        closeGalleryPreview();
+        const done = () => {
+          missing.forEach(id => {
+            inflight.delete(id);
+            if (!thumbCache.has(id)) notFound.add(id);
+          });
+          resolve();
+        };
+
+        if (xhr && xhr.always) xhr.always(done); else done();
       });
 
-      $panel.on('click', '.allpic-confirm-btn', function() {
-        const order = $ul.children('.all_pics__item')
-          .map(function() { return $(this).attr('data-id'); })
-          .get()
-          .join(',');
-
-        const base = (window.allPicConfig && window.allPicConfig.shortcodeBase) || '<txp::gallery ';
-        const newTag = `${base}id="${order}" />`;
-
-        const before = ta.value.slice(0, range.start);
-        const after = ta.value.slice(range.end);
-        ta.value = before + newTag + after;
-
-        const newCaret = range.start + newTag.length;
-        ta.setSelectionRange(newCaret, newCaret);
-        $ta.trigger('input');
-
-        closeGalleryPreview();
-      });
+      missing.forEach(id => inflight.set(id, request));
     }
 
-    $('body').on('click', '.allpic-preview-btn', function() {
-      const $ta = $(this).siblings('textarea');
-      const range = $(this).data('galleryRange');
-      if (!range) return;
-      openGalleryPreview($ta, range);
-    });
-
-
-    function closeGalleryPreview() {
-      // jQuery UI dialog, if present
-      const $dlg = $('#allpic-gallery-dialog');
-      if ($dlg.length) {
-        try { $dlg.dialog('destroy'); } catch (e) {}
-        $dlg.remove();
-      }
-    }
-
-
-    function refreshThumbsFromInput($input, container) {
-      const ids = ($input.val() || '').split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
-
-      container.empty();
-
-      ids.forEach(function(item) {
-        const id = item.trim();
-
-        // Check if it's a numeric ID (match against #all_pic_store)
-        if (/^\d+$/.test(id)) {
-          const $thumb = $('#all_pic_store').find(`[data-id="${id}"]`).clone();
-          if ($thumb.length) {
-            container.append($thumb);
-          } else {
-            console.warn(`No cached thumb for ID ${id}`);
-          }
-
-          // Otherwise, treat it as a URL or relative path and build a generic thumb
-        } else if (/\.(jpe?g|png|gif|webp|svg)$/i.test(id)) {
-          const thumbHtml = `
-            <li class="all_pics__item all_pics__item--url" data-id="${id}">
-              <img title="External image" src="${id}" alt=""/>
-              <p>
-                <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
-              </p>
-            </li>`;
-          container.append(thumbHtml);
-        }
-      });
-    }
-
-
-
-
-
-
-
-
-
-    // make all lists (including any existing shortcode list) sortable
-    initJQUSortable();
-
-
-
-
-
-
-    // respond to manual deletions or additions of ids in a field
-    $thumbInputs.on('input', debounce(function() {
-      const $input = $(this);
-      const container = $input.next().find('.all_pics');
-      const value = $input.val().split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
-
-      const currentIds = container.find('.all_pics__item').map(function() {
-        return $(this).attr('data-id');
-      }).get();
-
-      // Remove missing thumbs
-      currentIds.forEach(id => {
-        if (!value.includes(id)) {
-          container.find(`[data-id="${id}"]`).remove();
-        }
-      });
-
-      // recreate thumbs to suit current ids
-      // calls php all_pic_ajax_get_thumbs()
-      const newIds = value.filter(id => !currentIds.includes(id));
-      if (!newIds.length) return;
-      sendAsyncEvent({
-        event: 'all_pic',
-        step: 'get_thumbs',
-        ids: newIds.join(','),
-      }, function(response) {
-        //console.log('response:', response);
-
-        if (response.trim()) {
-          // Add the returned thumbs to the hidden store
-          $('#all_pic_store').append(response);
-
-          // Now refresh from input so they appear in correct order
-          refreshThumbsFromInput($input, container);
-        } else {
-          console.warn(`No thumbs returned for IDs: ${newIds.join(', ')}`);
-        }
-      }, 'html');
-
-    }, 400));
-
-    // SideView actions
-    $('body').on('click', '.all_pics__add, .all_pics__edit', function() {
-      window.scrollTo(0, 0);
-      // assign url to each
-      const isAdd = $(this).hasClass('all_pics__add');
-      const imageId = isAdd ? '' : $(this).closest('.all_pics__item').attr('data-id');
-      const iframeUrl = isAdd ?
-        'index.php?event=image' :
-        `index.php?event=image&step=image_edit&id=${imageId}`;
-
-      // Create SideView
-      if ($('#sideView_container').length) {
-        // If already open, update the iframe src
-        $('#sideView').attr('src', iframeUrl);
-      } else {
-        // remove all_sideview if active
-        if ($('#sideview').length) {
-          $('#sideview').remove();
-          localStorage.setItem('sideView', 'false');
-          $('.sideview__button').removeClass('sideview--active');
-
-        }
-        // Otherwise, create it fresh
-        $('.txp-body').append(
-          `<div id="sideView_container" role="dialog">
-            <iframe id="sideView" src="${iframeUrl}" frameborder="0"></iframe>
-          </div>`
-        );
-      }
-
-
-
-      // Add control panel
-      // Use the current language title of each specified custom field, and set up identifiers
-      let fields = '';
-      for (let i = 1; i < thumbFields.length; i++) {
-        const fieldId = thumbFields[i].replace('#', '');
-        const label = $(thumbFields[i]).parent().prev().find('label').text();
-        fields += `<li data-name="${fieldId}"><a>${label}</a></li>`;
-      }
-
-      const thumbHeader = `
-        <header>
-          <div class="all_pic__banner">
-            <p>Drag a thumbnail directly to your collection,</p>
-            <p><a id="all_pic__close" href="#">${closeText}</a></p>
-          </div>
-          <p>or add selected images to</p>
-          <ul>
-            <li data-name="article-image"><a>${$('#txp-image-group-label').text()}</a></li>
-            ${fields}
-          </ul>
-          <div data-name="shortcode">
-            or a <a>shortcode</a>.
-            <input type="text" hidden id="shortcode"/>
-            <textarea id="shortcodeOut"></textarea>
-            <ul class="all_pics"></ul>
-          </div>
-        </header>`;
-
-      // reinstate header if we've been editing an image in SideView
-      if ($('#sideView_container > header').length == 0) {
-        $('#sideView_container').prepend(thumbHeader);
-      }
-
-      // (re)bind sortable now that the shortcode UL exists
-      initJQUSortable();
-
-      $('#all_pic__close').on('click', function() {
-        $('#sideView_container').remove();
-        return false;
-      });
-
-
-      $('#sideView').on('load', function() {
-        const iframe = $('#sideView').contents();
-
-
-
-
-        // Make thumbs draggable-from-iframe (same-origin)
-        try {
-          // bind inside iframe document, but call parent drag module
-          iframe.find('body')
-            .off('mousedown.allpicdrag')
-            .on('mousedown.allpicdrag', '.has-thumbnail img', function(e) {
-
-              const $tr = $(this).closest('tr');
-              const id = $tr.find('.txp-list-col-id a').text().trim();
-              const src = $(this).prop('src');
-
-              if (!id) return;
-
-              const iframeEl = document.getElementById('sideView');
-              const r = iframeEl.getBoundingClientRect();
-
-              // Translate iframe-local mouse coords to parent viewport coords
-              const startX = r.left + e.clientX;
-              const startY = r.top + e.clientY;
-
-              window.allPicDrag.begin({ id, src, startX, startY });
-
-              e.preventDefault();
-              e.stopPropagation();
-            });
-        } catch (err) {
-          // cross-origin or iframe access failure: ignore
-        }
-        // hide control panel elements if we're editing an image
-        if (iframe.find('#image_details_form').length > 0) {
-          $('body').addClass('all_pics__edit--is-active');
-          iframe.find('.txp-edit-actions').on('click', function() {
-            $('body').removeClass('all_pics__edit--is-active');
-          });
-        } else {
-          $('body').removeClass('all_pics__edit--is-active');
-        }
-
-        iframe.find('body').addClass('all_pic_modified');
-        iframe.find('.has-thumbnail a').attr('href', '');
-        if (iframe.find('#tom_ig_options').length == 0 || iframe.find('.all_behive-icons').length == 0) {
-          iframe.find('body#page-image').addClass('grid-active');
-
-          iframe.find('#images_form').before('<div class="all_behive-icons grid-active"><button class="ui-icon ui-icon-large ui-icon-grip-dotted-horizontal" href="">Grid View</button><button class="ui-icon ui-icon-large ui-icon-grip-solid-horizontal" href="">List View</button></div>');
-
-          iframe.find('.all_behive-icons button').on('click', function() {
-            iframe.find('body#page-image').toggleClass('grid-active');
-            return false;
-          });
-
-
-
-
-
-        }
-
-
-        iframe.find('#current-page').remove(); // screws things up
-
-        $('#sideView_container header [data-name]').each(function() {
-          const fieldName = $(this).attr('data-name');
-          const $targetInput = $('#' + fieldName);
-
-          $(this).on('click', function() {
-            const targetContainer = $targetInput.parent().find('.all_pics');
-            const isShortcode = fieldName === 'shortcode';
-            const idsBase = ($targetInput.val() || '').split(',');
-            // remove empty values
-            const ids = idsBase.filter(function(e) { return e });
-
-
-            iframe.find('tr.selected').each(function() {
-              const sourceId = $(this).find('.txp-list-col-id a').text();
-              const sourceUrl = $(this).find('.has-thumbnail img').prop('src');
-              if (!ids.includes(sourceId)) {
-                ids.push(sourceId);
-
-                temporaryThumb(targetContainer, sourceId, sourceUrl);
-              }
-            });
-
-            $targetInput.val(ids);
-
-            if (isShortcode) {
-              $('#shortcodeOut').show();
-              const shortcode = `${shortcodeBase}id="${ids.join(',').replace(/^(,+)/, '')}" />`;
-              $('#shortcodeOut').val(shortcode).select();
-            }
-
-            // deselect selected checkboxes
-            iframe.find('tr.selected').removeClass('selected').find('input').prop('checked', false);
-            iframe.find('.txp-list-col-multi-edit input').prop('checked', false);
-          });
-        });
-
-      });
-
-      return false;
-    });
-
-    $('body').on('click', '.all_pics__delete', function() {
-      const $item = $(this).closest('.all_pics__item');
-      const $input = $item.closest('div').prev();
-      const id = $item.attr('data-id');
-      const ids = $input.val().split(',');
-      const index = ids.indexOf(id);
-      if (index !== -1) ids.splice(index, 1);
-      $input.val(ids);
-      $item.remove();
-      return false;
-    });
-
-
+    return Promise.all(wanted.map(id => inflight.get(id)).filter(Boolean));
   }
 
-  function temporaryThumb(container, id, src) {
-    const $li = window.allPic.makeThumb(id, src);
-    container.append($li);
+  function urlThumb(url) {
+    return $(`
+      <li class="all_pics__item all_pics__item--url" data-id="${esc(url)}">
+        <img title="External image" src="${esc(url)}" alt=""/>
+        <p>
+          <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
+        </p>
+      </li>`);
   }
 
-  // Export helpers for the drag module (global scope safe)
-  window.allPic = window.allPic || {};
+  // an id with no image behind it: shown so it isn't silently dropped by a reorder or Confirm
+  function missingThumb(id) {
+    return $(`
+      <li class="all_pics__item all_pics__item--missing" data-id="${esc(id)}" title="No image with id ${esc(id)}">
+        <span class="all_pics__missing">${esc(id)}?</span>
+        <p>
+          <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
+        </p>
+      </li>`);
+  }
 
   // Returns a jQuery <li> for an id+src, preferring cached markup
-  window.allPic.makeThumb = function(id, src) {
+  function makeThumb(id, src) {
     id = String(id).trim();
-    const $store = $('#all_pic_store');
 
-    // Prefer cached thumb (keeps consistent markup/icons)
-    const $cached = $store.find(`[data-id="${id}"]`).first();
-    if ($cached.length) return $cached.clone();
+    const $cached = getThumb(id);
+    if ($cached) return $cached;
 
-    // Fallback: build a thumb like your normal ones
     const $li = $(`
-      <li class="all_pics__item" data-id="${id}">
-        <img title="Drag (${id}) to relocate" src="${src || ''}" alt=""/>
+      <li class="all_pics__item" data-id="${esc(id)}">
+        <img title="Drag (${esc(id)}) to relocate" src="${esc(src || '')}" alt=""/>
         <p>
           <span class="all_pics__icon"><a class="ui-icon ui-icon-pencil all_pics__edit" href="#" title="${editText}">${editText}</a></span>
           <span class="all_pics__icon"><a class="ui-icon ui-icon-close all_pics__delete" href="#" title="${deleteText}">${deleteText}</a></span>
         </p>
-      </li>
-    `);
+      </li>`);
 
-    // Persist to store for future refreshThumbsFromInput()
-    if ($store.length && !$store.find(`[data-id="${id}"]`).length) {
-      $store.append($li.clone());
-    }
-
+    if (isNumericId(id)) thumbCache.set(id, $li[0].outerHTML);
     return $li;
-  };
-
-  if (isChrome()) {
-    $('body').addClass('is-chrome');
   }
 
-});
+  // re-fetch one image's thumb (e.g. after it was edited in SideView) and swap it in
+  // everywhere it shows: fields and the gallery preview
+  function refreshThumb(id) {
+    id = String(id || '');
+    if (!isNumericId(id)) return;
 
-function debounce(fn, delay) {
-  let timer = null;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
-}
+    thumbCache.delete(id);
+    notFound.delete(id);
 
-function resyncFromUl($ul) {
-  const order = $ul.children('.all_pics__item')
-    .map(function() { return $(this).attr('data-id'); })
-    .get()
-    .join(',');
-
-  // Standard galleries
-  const $ct = $ul.closest('.all_pics_container');
-  const $input = $ct.prev('input');
-
-  if ($input.length) {
-    $input.val(order);
-    return;
+    ensureThumbs([id]).then(() => {
+      $(`.all_pics__item[data-id="${id}"]`).each(function() {
+        $(this).replaceWith(getThumb(id) || missingThumb(id)); // missing if it was deleted
+      });
+    });
   }
 
-  // Shortcode gallery (in SideView header)
-  if ($ul.closest('[data-name="shortcode"]').length) {
-    $('#shortcode').val(order);
-    const base = (window.allPicConfig && window.allPicConfig.shortcodeBase) || '';
-    $('#shortcodeOut').val(`${base}id="${order}" />`);
+
+  /* ---------------------------------------------------------------
+   * rendering
+   * ------------------------------------------------------------- */
+
+  function renderList($ul, ids) {
+    $ul.empty();
+    ids.forEach(id => {
+      if (isNumericId(id)) {
+        const $thumb = getThumb(id);
+        if ($thumb) $ul.append($thumb);
+        else if (notFound.has(id)) $ul.append(missingThumb(id));
+      } else if (isImageUrl(id)) {
+        $ul.append(urlThumb(id));
+      }
+    });
   }
-}
 
+  function refreshThumbsFromInput($input, $ul) {
+    if (!$input.length || !$ul.length) return;
 
-function insertThumbAtPoint($ul, $li, clientY) {
-  const items = $ul.children('.all_pics__item').get();
+    const ids = parseIds($input.val());
+    renderList($ul, ids);
 
-  if (!items.length) {
-    $ul.append($li);
-    return;
+    // anything not cached yet: fetch, then render again from the (current) field value
+    if (ids.some(id => isNumericId(id) && !thumbCache.has(id) && !notFound.has(id))) {
+      ensureThumbs(ids).then(() => renderList($ul, parseIds($input.val())));
+    }
   }
 
-  // Insert before the first item whose midpoint is below the cursor
-  for (const el of items) {
-    const r = el.getBoundingClientRect();
-    const mid = r.top + (r.height / 2);
-    if (clientY < mid) {
-      $(el).before($li);
+  // write a list's current order back to wherever it belongs
+  function resyncFromUl($ul) {
+    const order = $ul.children('.all_pics__item')
+      .map(function() { return $(this).attr('data-id'); })
+      .get();
+
+    // standard field
+    const $input = inputFor($ul);
+    if ($input.length) {
+      writeIds($input, order);
       return;
     }
+
+    // gallery preview dialog: nothing to write until Confirm
   }
 
-  // Otherwise append at end
-  $ul.append($li);
-}
+  // add containers after each image field (idempotent), redraw thumbs, make lists sortable
+  function all_picjs() {
+    thumbFields.forEach(function(selector) {
+      const $input = $(selector);
+      if (!$input.length || $input.next('.all_pics_container').length) return;
 
+      $input.after(
+        `<div class="all_pics_container">
+          <ul class="all_pics" data-empty="${dropText}"></ul>
+        </div>`
+      );
+    });
 
-function initJQUSortable() {
-  const $lists = $('.all_pics');
-
-  // If we’re re-initializing (after async save / SideView open), destroy old instances
-  try { $lists.filter('.ui-sortable').sortable('destroy'); } catch (e) {}
-
-  $lists.sortable({
-    connectWith: '.all_pics',
-    items: '> .all_pics__item',
-    placeholder: 'all_pics__placeholder',
-    forcePlaceholderSize: true,
-    tolerance: 'pointer',
-    start: function() { $('body').addClass('allpic-dragging'); },
-    stop: function() { $('body').removeClass('allpic-dragging'); },
-
-    // When this UL changes (drop inside it), update its matching input
-    update: function() {
-      resyncFromUl($(this));
-    },
-
-    // When an item is received from another list, update both lists’ inputs
-    receive: function(e, ui) {
-      resyncFromUl($(this)); // destination
-      if (ui.sender) resyncFromUl(ui.sender); // source
+    // a single "Add images" link, just before the first configured field that exists
+    if (!$('#all_pics__add-main').length) {
+      const $first = $(fieldSelector).first();
+      if ($first.length) {
+        const $field = $first.closest('.txp-form-field');
+        ($field.length ? $field : $first).before(
+          `<a id="all_pics__add-main" class="all_pics__add all_pics__add--main" href="#" title="${addImages}">${addImages} <span class="ui-icon ui-icon-search"></span></a>`
+        );
+      }
     }
-  }).disableSelection();
-}
 
+    $(fieldSelector).each(function() {
+      const $input = $(this);
+      refreshThumbsFromInput($input, ulFor($input));
+    });
 
-
-window.allPicDrag = (function() {
-  let dragging = null; // { id, src, $ghost }
-  let moveHandler = null;
-  let upHandler = null;
-
-  // Placeholder state
-  let $ph = null; // <li class="all_pics__placeholder">
-  let $activeUL = null; // currently hovered UL
-
-  function ensurePlaceholder() {
-    if ($ph) return;
-    $ph = $('<li class="all_pics__placeholder"></li>');
+    initJQUSortable();
   }
 
-  function clearPlaceholder() {
-    if ($ph) $ph.detach();
-    if ($activeUL) {
-      $activeUL.removeClass('allpic-dropzone-active');
-      $activeUL = null;
+
+  /* ---------------------------------------------------------------
+   * sortable
+   * ------------------------------------------------------------- */
+
+  function initJQUSortable() {
+    // only lists that aren't sortable yet; connectWith is resolved at drag start,
+    // so lists added later are picked up without rebuilding the others
+    $('.all_pics').not('.ui-sortable').each(function() {
+      const inDialog = $(this).closest('.ui-dialog').length > 0;
+
+      $(this).sortable({
+        // fields, shortcode list and the preview dialog all share thumbs
+        connectWith: '.all_pics',
+        items: '> .all_pics__item',
+        // drag a clone attached to <body>: an 'original' helper stays inside the dialog's
+        // scrolling content box, which then scrolls instead of letting the thumb leave
+        helper: 'clone',
+        appendTo: document.body,
+        zIndex: 100000,
+        scroll: !inDialog,
+        cancel: '.all_pics__icon, a, input, textarea, button, select, option',
+        distance: 5,
+        placeholder: 'all_pics__placeholder',
+        forcePlaceholderSize: true,
+        tolerance: 'pointer',
+        start: function() { $('body').addClass('allpic-dragging'); },
+        stop: function() { $('body').removeClass('allpic-dragging'); },
+        // fires on both lists when a thumb moves between them
+        update: function() { resyncFromUl($(this)); }
+      });
+    });
+  }
+
+
+  /* ---------------------------------------------------------------
+   * shortcode preview in the body textarea
+   * ------------------------------------------------------------- */
+
+  function findGalleryAtCaret(text, caret) {
+    let open = -1;
+    tagBases.forEach(base => { open = Math.max(open, text.lastIndexOf(base, caret)); });
+    if (open === -1) return null;
+
+    const close = text.indexOf('/>', open);
+    if (close === -1) return null;
+
+    // caret must be within the tag bounds
+    if (caret < open || caret > close + 2) return null;
+
+    return { start: open, end: close + 2, tag: text.slice(open, close + 2) };
+  }
+
+  function getCaretCoordsInTextarea(textarea, pos) {
+    const cs = window.getComputedStyle(textarea);
+    const div = document.createElement('div');
+
+    div.style.position = 'absolute';
+    div.style.visibility = 'hidden';
+    div.style.whiteSpace = 'pre-wrap';
+    div.style.wordWrap = 'break-word';
+    div.style.overflow = 'hidden';
+
+    [
+      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'textTransform',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+      'lineHeight', 'textAlign', 'width'
+    ].forEach(p => div.style[p] = cs[p]);
+
+    div.style.height = cs.height;
+    div.textContent = textarea.value.substring(0, pos);
+
+    const span = document.createElement('span');
+    span.textContent = textarea.value.substring(pos) || '.';
+    div.appendChild(span);
+
+    document.body.appendChild(div);
+    const spanRect = span.getBoundingClientRect();
+    const divRect = div.getBoundingClientRect();
+    document.body.removeChild(div);
+
+    return {
+      top: (spanRect.top - divRect.top) - textarea.scrollTop,
+      left: (spanRect.left - divRect.left) - textarea.scrollLeft
+    };
+  }
+
+  const ID_ATTR = /(^|\s)id\s*=\s*(['"])(.*?)\2/i;
+
+  function extractIdsFromGalleryTag(tag) {
+    const m = tag.match(ID_ATTR);
+    return m ? parseIds(m[3]) : [];
+  }
+
+  // set id="…" in a tag, keeping any other attributes
+  function setIdsInTag(tag, ids) {
+    const attr = `id="${ids.join(',')}"`;
+    if (ID_ATTR.test(tag)) return tag.replace(ID_ATTR, `$1${attr}`);
+    return tag.replace(/\s*\/>$/, ` ${attr} />`);
+  }
+
+  function ensurePreviewUI($ta) {
+    if (!$ta.parent('.allpic-ta-wrap').length) {
+      $ta.wrap('<div class="allpic-ta-wrap" style="position:relative;"></div>');
+    }
+
+    const $wrap = $ta.parent('.allpic-ta-wrap');
+
+    if (!$wrap.find('.allpic-preview-btn').length) {
+      $wrap.append(`
+        <button type="button" class="allpic-preview-btn" style="position:absolute; display:none; z-index:5;">
+          <span class="ui-icon ui-icon-notice" title="Preview shortcode"></span>
+        </button>
+      `);
     }
   }
 
-  function placePlaceholderAt(clientX, clientY) {
-    const el = document.elementFromPoint(clientX, clientY);
-    if (!el || !el.closest) { clearPlaceholder(); return; }
+  function updatePreviewButton($ta) {
+    // only one button on the page
+    $('.allpic-preview-btn').hide().removeData('galleryRange');
 
-    // Prefer UL, else fall back to container and grab its UL
-    let ul = el.closest('.all_pics');
-    if (!ul) {
-      const ct = el.closest('.all_pics_container, #allpic-gallery-dialog, [data-name="shortcode"]');
-      ul = ct ? ct.querySelector('.all_pics') : null;
+    ensurePreviewUI($ta);
+
+    const ta = $ta[0];
+    const caret = ta.selectionStart || 0;
+    const hit = findGalleryAtCaret(ta.value, caret);
+    const $btn = $ta.parent('.allpic-ta-wrap').find('.allpic-preview-btn');
+
+    if (!hit) return;
+
+    const coords = getCaretCoordsInTextarea(ta, caret);
+    $btn.show().css({ top: (coords.top + 6) + 'px' }).data('galleryRange', hit);
+  }
+
+  function closeGalleryPreview() {
+    const $dlg = $('#allpic-gallery-dialog');
+    if ($dlg.length) {
+      try { $dlg.dialog('destroy'); } catch (e) {}
+      $dlg.remove();
+    }
+  }
+
+  function openGalleryPreview($ta, range) {
+    closeGalleryPreview();
+
+    const ids = extractIdsFromGalleryTag(range.tag);
+
+    const $panel = $(`
+      <div id="allpic-gallery-dialog" title="Shortcode preview">
+        <div style="display:flex; gap:.5em; align-items:center; margin-bottom:.5em;">
+          <a class="all_pics__add" href="#" title="${addImages}">${addImages} <span class="ui-icon ui-icon-search"></span></a>
+          <button type="button" class="allpic-confirm-btn">Confirm</button>
+          <button type="button" class="allpic-cancel-btn">Close</button>
+        </div>
+        <ul class="all_pics all_pics--dialog" data-empty="${dropText}"></ul>
+      </div>
+    `);
+
+    $('body').append($panel);
+
+    const ta = $ta[0];
+    const coords = getCaretCoordsInTextarea(ta, ta.selectionStart || 0);
+    const taRect = ta.getBoundingClientRect();
+    const top = window.scrollY + taRect.top + coords.top + 24;
+    const left = window.scrollX + taRect.left + 24;
+
+    $panel.dialog({
+      modal: false,
+      draggable: true,
+      resizable: true,
+      width: 520,
+      minWidth: 360,
+      position: { my: 'left top', at: `left+${Math.round(left)} top+${Math.round(top)}`, of: window },
+      close: closeGalleryPreview
+    });
+
+    const $ul = $panel.find('.all_pics');
+
+    ensureThumbs(ids).then(() => {
+      renderList($ul, ids.filter(isNumericId));
+      initJQUSortable();
+    });
+
+    $panel.on('click', '.allpic-cancel-btn', closeGalleryPreview);
+
+    $panel.on('click', '.allpic-confirm-btn', function() {
+      const order = $ul.children('.all_pics__item')
+        .map(function() { return $(this).attr('data-id'); })
+        .get();
+
+      // the textarea may have changed while the dialog was open: re-find the tag
+      const hit = findGalleryAtCaret(ta.value, range.start + 1) || range;
+      const newTag = setIdsInTag(hit.tag, order);
+
+      ta.value = ta.value.slice(0, hit.start) + newTag + ta.value.slice(hit.end);
+
+      const newCaret = hit.start + newTag.length;
+      ta.setSelectionRange(newCaret, newCaret);
+      $ta.trigger('input').trigger('change');
+
+      closeGalleryPreview();
+    });
+  }
+
+
+  /* ---------------------------------------------------------------
+   * SideView (Images panel in an iframe)
+   * ------------------------------------------------------------- */
+
+  function openSideView() {
+    window.scrollTo(0, 0);
+
+    const isAdd = $(this).hasClass('all_pics__add');
+    const imageId = isAdd ? '' : $(this).closest('.all_pics__item').attr('data-id');
+    const iframeUrl = isAdd ?
+      'index.php?event=image' :
+      `index.php?event=image&step=image_edit&id=${encodeURIComponent(imageId)}`;
+
+    if ($('#sideView_container').length) {
+      $('#sideView').attr('src', iframeUrl);
+    } else {
+      // remove all_sideview if active
+      if ($('#sideview').length) {
+        $('#sideview').remove();
+        localStorage.setItem('sideView', 'false');
+        $('.sideview__button').removeClass('sideview--active');
+      }
+
+      $('.txp-body').append(
+        `<div id="sideView_container" role="dialog">
+          <iframe id="sideView" src="${iframeUrl}" frameborder="0"></iframe>
+        </div>`
+      );
+
+      // bound once per iframe, not once per click
+      $('#sideView').on('load.allpic', onSideViewLoad);
     }
 
-    if (!ul) { clearPlaceholder(); return; }
+    // control panel: use the current label of each specified field
+    if (!$('#sideView_container > header').length) {
+      let fields = '';
+      for (let i = 1; i < thumbFields.length; i++) {
+        const fieldId = thumbFields[i].replace('#', '');
+        const label = $(thumbFields[i]).parent().prev().find('label').text();
+        fields += `<li data-name="${esc(fieldId)}"><a>${esc(label)}</a></li>`;
+      }
 
-    const $ul = $(ul);
-
-    if (!$activeUL || !$activeUL.is($ul)) {
-      if ($activeUL) $activeUL.removeClass('allpic-dropzone-active');
-      $activeUL = $ul.addClass('allpic-dropzone-active');
+      $('#sideView_container').prepend(`
+        <header>
+          <div class="all_pic__banner">
+            <p>Drag a thumb (or a selection of thumbs) directly to your collection,</p>
+            <p><a id="all_pic__close" href="#">${closeText}</a></p>
+          </div>
+          <p>or add selected images to</p>
+          <ul>
+            <li data-name="article-image"><a>${esc($('#txp-image-group-label').text())}</a></li>
+            ${fields}
+          </ul>
+          <p class="all_pic__note">${esc(noteText)}</p>
+        </header>`);
     }
 
-    ensurePlaceholder();
+    return false;
+  }
 
-    // Ensure placeholder is inside this UL
-    if (!$ph.parent().is($ul)) {
-      $ph.detach();
+  let sideViewEditId = null; // image open for editing in SideView, if any
+
+  function onSideViewLoad() {
+    let iframe;
+    try {
+      iframe = $('#sideView').contents();
+    } catch (err) {
+      return; // cross-origin or iframe access failure
+    }
+
+    // native drag and drop out of the iframe (same-origin, so the parent can see it start)
+    const rowId = $tr => $tr.find('.txp-list-col-id a').text().trim();
+    const rowSrc = $tr => $tr.find('.has-thumbnail img').prop('src');
+
+    iframe.find('body')
+      .off('.allpicdrag')
+      .on('dragstart.allpicdrag', '.has-thumbnail img', function(e) {
+        const $tr = $(this).closest('tr');
+        if (!rowId($tr)) return;
+
+        // dragging a selected row carries every selected row; otherwise just this one
+        const $rows = $tr.hasClass('selected') ? $tr.closest('tbody').find('tr.selected') : $tr;
+        const items = $rows.map(function() { return { id: rowId($(this)), src: rowSrc($(this)) }; }).get();
+
+        const dt = e.originalEvent.dataTransfer;
+        dt.effectAllowed = 'copy';
+        try {
+          dt.setData('text/x-allpic-ids', items.map(i => i.id).join(','));
+          dt.setData('text/plain', buildTag(items.map(i => i.id))); // what Body/Excerpt insert where it's dropped
+        } catch (err) {}
+
+        allPicDrag.begin(items);
+      })
+      .on('dragend.allpicdrag', function() { allPicDrag.end(); })
+      // back over the iframe: no placeholder in the form
+      .on('dragover.allpicdrag', function() { allPicDrag.leave(); })
+      // never let a dropped thumb land in the iframe's own inputs as a URL
+      .on('drop.allpicdrag', function(e) { if (allPicDrag.active()) e.preventDefault(); });
+
+    // hide control panel elements if we're editing an image
+    if (iframe.find('#image_details_form').length > 0) {
+      $('body').addClass('all_pics__edit--is-active');
+      iframe.find('.txp-edit-actions').on('click', function() {
+        $('body').removeClass('all_pics__edit--is-active');
+      });
+    } else {
+      $('body').removeClass('all_pics__edit--is-active');
+    }
+
+    iframe.find('body').addClass('all_pic_modified');
+
+    if (iframe.find('#tom_ig_options').length == 0 || iframe.find('.all_behive-icons').length == 0) {
+      iframe.find('body#page-image').addClass('grid-active');
+    }
+
+
+    // column display options: into the right-hand end of the table header (styled in all_pic.scss).
+    // TXP builds them after load and rebuilds the list on async sort/search/paging, so keep re-placing them
+    const idoc = iframe[0];
+    const iwin = idoc.defaultView;
+
+    const placeListOptions = () => {
+      const opts = idoc.querySelector('.txp-list-options');
+      const row = idoc.querySelector('#images_form thead tr');
+      if (!opts || !row) return;
+
+      const btn = opts.querySelector('.txp-list-options-button');
+      if (btn && btn.type !== 'button') btn.type = 'button'; // inside the form: must not submit it
+
+      if (opts.closest('thead')) return;
+
+      let th = row.querySelector('th.all_pic__list-options');
+      if (!th) {
+        th = idoc.createElement('th');
+        th.className = 'all_pic__list-options';
+        row.appendChild(th);
+      }
+      th.appendChild(opts);
+    };
+
+    // per-row tweaks; TXP swaps in new rows without a reload on sort, search and paging
+    const prepRows = () => {
+      idoc.querySelectorAll('.has-thumbnail img:not([draggable])').forEach(img => img.setAttribute('draggable', 'true'));
+      idoc.querySelectorAll('.has-thumbnail a[href]:not([href=""])').forEach(a => a.setAttribute('href', ''));
+    };
+
+    prepRows();
+    placeListOptions();
+
+    let queued = false;
+    new iwin.MutationObserver(function() {
+      if (queued) return;
+      queued = true;
+      iwin.requestAnimationFrame(function() { queued = false; prepRows(); placeListOptions(); });
+    }).observe(idoc.body, { childList: true, subtree: true });
+
+    // an image edited in SideView: refresh its thumb in the form once it's saved.
+    // Save, thumbnail create/upload/delete and Delete reload the iframe (handled on the next load);
+    // Replace image uploads asynchronously (uploadEnd), as can other async saves (txpAsyncForm.success)
+    if (sideViewEditId) refreshThumb(sideViewEditId);
+
+    const $editForm = iframe.find('#image_details_form');
+    sideViewEditId = $editForm.length ? ($editForm.find('input[name="id"]').val() || new URL(iwin.location.href).searchParams.get('id')) : null;
+
+    if (sideViewEditId && iwin.textpattern && iwin.textpattern.Relay) {
+      const id = sideViewEditId;
+      const later = () => setTimeout(() => refreshThumb(id), 300);
+      iwin.textpattern.Relay.register('uploadEnd', later);
+      iwin.textpattern.Relay.register('txpAsyncForm.success', later);
+    }
+  }
+
+  // "add selected images to …" — reads the iframe's selection at click time
+  function addSelectedTo() {
+    const fieldName = $(this).closest('[data-name]').attr('data-name');
+    const $targetInput = $('#' + fieldName);
+    const $ul = ulFor($targetInput);
+
+    let iframe;
+    try { iframe = $('#sideView').contents(); } catch (e) { return false; }
+
+    const ids = parseIds($targetInput.val());
+
+    iframe.find('tr.selected').each(function() {
+      const sourceId = $(this).find('.txp-list-col-id a').text().trim();
+      const sourceUrl = $(this).find('.has-thumbnail img').prop('src');
+      if (sourceId && !ids.includes(sourceId)) {
+        ids.push(sourceId);
+        $ul.append(makeThumb(sourceId, sourceUrl));
+      }
+    });
+
+    writeIds($targetInput, ids);
+
+    // deselect selected checkboxes
+    iframe.find('tr.selected').removeClass('selected').find('input').prop('checked', false);
+    iframe.find('.txp-list-col-multi-edit input').prop('checked', false);
+    return false;
+  }
+
+  function deleteThumb() {
+    const $item = $(this).closest('.all_pics__item');
+    const $ul = $item.closest('.all_pics');
+    const id = String($item.attr('data-id'));
+    const $input = inputFor($ul);
+
+    $item.remove();
+
+    if ($input.length) {
+      // remove just this id from the field (keeps ids that have no thumb)
+      const ids = parseIds($input.val());
+      const index = ids.indexOf(id);
+      if (index !== -1) ids.splice(index, 1);
+      writeIds($input, ids);
+    } else {
+      resyncFromUl($ul);
+    }
+
+    return false;
+  }
+
+
+  /* ---------------------------------------------------------------
+   * drag from the SideView iframe into a list
+   * ------------------------------------------------------------- */
+
+  const allPicDrag = (function() {
+    let dragging = null; // { items: [{ id, src }] }
+    let $ph = null; // placeholder <li>
+    let $activeUL = null; // currently hovered UL
+
+    function clearPlaceholder() {
+      if ($ph) $ph.detach();
+      if ($activeUL) {
+        $activeUL.removeClass('allpic-dropzone-active');
+        $activeUL = null;
+      }
+    }
+
+    function placePlaceholderAt(clientX, clientY) {
+      const el = document.elementFromPoint(clientX, clientY);
+      if (!el || !el.closest) { clearPlaceholder(); return; }
+
+      let ul = el.closest('.all_pics');
+      if (!ul) {
+        const ct = el.closest('.all_pics_container, #allpic-gallery-dialog');
+        ul = ct ? ct.querySelector('.all_pics') : null;
+      }
+      if (!ul) { clearPlaceholder(); return; }
+
+      const $ul = $(ul);
+
+      if (!$activeUL || !$activeUL.is($ul)) {
+        if ($activeUL) $activeUL.removeClass('allpic-dropzone-active');
+        $activeUL = $ul.addClass('allpic-dropzone-active');
+      }
+
+      if (!$ph) $ph = $('<li class="all_pics__placeholder"></li>');
+
+      for (const node of $ul.children('.all_pics__item').get()) {
+        const r = node.getBoundingClientRect();
+        if (clientY < r.top + r.height / 2) {
+          $(node).before($ph);
+          return;
+        }
+      }
       $ul.append($ph);
     }
 
-    // Compute insertion point by midpoint
-    const items = $ul.children('.all_pics__item').get();
+    // dragstart in the iframe
+    function begin(items) {
+      const seen = new Set();
+      items = (items || [])
+        .map(i => ({ id: String(i.id || '').trim(), src: i.src || '' }))
+        .filter(i => i.id && !seen.has(i.id) && seen.add(i.id));
+      if (!items.length) return;
 
-    if (!items.length) {
-      // empty list: keep placeholder as only child
-      if (!$ph.parent().is($ul)) $ul.append($ph);
-      return;
-    }
-
-    for (const node of items) {
-      const r = node.getBoundingClientRect();
-      const mid = r.top + r.height / 2;
-      if (clientY < mid) {
-        $(node).before($ph);
-        return;
-      }
-    }
-    // otherwise at end
-    $ul.append($ph);
-  }
-
-  function begin({ id, src, startX, startY }) {
-    if (!id) return;
-
-    end(); // prevent duplicate drags
-    dragging = { id: String(id), src: src || '' };
-
-    const $ghost = $(`
-      <div class="allpic-drag-ghost" style="position:fixed; z-index:99999; pointer-events:none;">
-        <img src="${dragging.src}" style="max-width:64px; box-shadow:0 6px 18px rgba(0,0,0,.25);" />
-      </div>
-    `);
-    $('body').append($ghost);
-    dragging.$ghost = $ghost;
-
-    // Position ghost immediately at start point (if provided)
-    const x = (typeof startX === 'number') ? startX : window.innerWidth / 2;
-    const y = (typeof startY === 'number') ? startY : window.innerHeight / 2;
-    dragging.$ghost.css({ left: x + 12, top: y + 12 });
-
-    // Highlight drop zones + prevent iframe stealing mouse events
-    $('body').addClass('allpic-dragging');
-    $('.all_pics').addClass('allpic-dropzone');
-
-    // Place placeholder right away
-    placePlaceholderAt(x, y);
-
-    moveHandler = function(e) {
-      dragging.$ghost.css({ left: e.clientX + 12, top: e.clientY + 12 });
-      placePlaceholderAt(e.clientX, e.clientY);
-    };
-
-    upHandler = function(e) {
-      dropAt(e.clientX, e.clientY);
       end();
-    };
+      dragging = { items };
+      $('.all_pics').addClass('allpic-dropzone');
+    }
 
-    document.addEventListener('mousemove', moveHandler, true);
-    document.addEventListener('mouseup', upHandler, true);
-  }
+    // dragover anywhere in this (parent) document
+    function over(e) {
+      if (!dragging) return;
+      placePlaceholderAt(e.clientX, e.clientY);
 
-  function dropAt(x, y) {
-    // Prefer dropping into the UL currently holding the placeholder
-    const $ul = ($ph && $ph.parent().length) ? $ph.parent() : null;
-    if (!$ul || !$ul.length) return;
+      if ($ph && $ph.parent().length) {
+        e.preventDefault(); // allow a drop here
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    }
 
-    // 0) Gallery preview dialog: just insert thumb visually
-    if ($ul.closest('#allpic-gallery-dialog').length) {
-      if ($ul.find(`[data-id="${dragging.id}"]`).length) {
-        clearPlaceholder();
+    // textareas that accept a dropped shortcode (inserted by the browser at the drop point)
+    const TEXT_TARGETS = 'textarea#body, textarea#excerpt';
+
+    // drop anywhere in this document (capture phase)
+    function drop(e) {
+      if (!dragging) return;
+
+      if (!($ph && $ph.parent().length) && e.target.closest && e.target.closest(TEXT_TARGETS)) {
+        end(); // let the browser insert the shortcode
         return;
       }
-      const $thumb = window.allPic.makeThumb(dragging.id, dragging.src);
-      $ph.replaceWith($thumb);
+
+      e.preventDefault(); // nothing (e.g. an image URL) pasted into other fields
+      dropAt();
+      end();
+    }
+
+    function dropAt() {
+      const $ul = ($ph && $ph.parent().length) ? $ph.parent() : null;
+      if (!$ul || !dragging) return;
+
+      const isDialog = $ul.closest('#allpic-gallery-dialog').length > 0;
+      if (!isDialog && !inputFor($ul).length) return;
+
+      // skip ids already in this list (previously produced duplicates)
+      const present = new Set($ul.children('.all_pics__item').map(function() { return String($(this).attr('data-id')); }).get());
+      const thumbs = dragging.items.filter(i => !present.has(i.id)).map(i => makeThumb(i.id, i.src)[0]);
+      if (!thumbs.length) return;
+
+      $ph.before(thumbs).detach();
+
+      if (!isDialog) resyncFromUl($ul);
+    }
+
+    // dragend in the iframe (drop, Escape, or released somewhere else)
+    function end() {
       clearPlaceholder();
-      return;
+      if (!dragging) return;
+      dragging = null;
+      $('.all_pics').removeClass('allpic-dropzone');
     }
 
-    // 1) SideView shortcode list
-    if ($ul.closest('[data-name="shortcode"]').length) {
-      const $input = $('#shortcode');
-      const ids = ($input.val() || '').split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
-      if (!ids.includes(dragging.id)) ids.push(dragging.id);
-      $input.val(ids.join(','));
-    } else {
-      // 2) Regular field list
-      const $ct = $ul.closest('.all_pics_container');
-      const $input = $ct.prev('input');
-      if (!$input.length) {
-        clearPlaceholder();
-        return;
-      }
+    return { begin, over, drop, end, leave: clearPlaceholder, active: () => !!dragging };
+  })();
 
-      const ids = ($input.val() || '').split(/[ ,]+/).map(s => s.trim()).filter(Boolean);
-      if (!ids.includes(dragging.id)) ids.push(dragging.id);
-      $input.val(ids.join(','));
-    }
 
-    // Replace placeholder with the real thumb at exact placeholder position
-    const $thumb = window.allPic.makeThumb(dragging.id, dragging.src);
-    $ph.replaceWith($thumb);
+  /* ---------------------------------------------------------------
+   * helpers
+   * ------------------------------------------------------------- */
 
-    // Now sync whichever list we dropped into
-    resyncFromUl($ul);
-
-    clearPlaceholder();
+  function debounce(fn, delay) {
+    let timer = null;
+    return function(...args) {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), delay);
+    };
   }
 
-  function end() {
-    if (!dragging) return;
-
-    clearPlaceholder();
-
-    if (dragging.$ghost) dragging.$ghost.remove();
-    dragging = null;
-
-    $('body').removeClass('allpic-dragging');
-    $('.all_pics').removeClass('allpic-dropzone');
-
-    if (moveHandler) document.removeEventListener('mousemove', moveHandler, true);
-    if (upHandler) document.removeEventListener('mouseup', upHandler, true);
-
-    moveHandler = null;
-    upHandler = null;
+  function isChrome() {
+    const ua = navigator.userAgent.toLowerCase();
+    return ua.includes('crios') || ua.includes('chrome') || !!window.chrome;
   }
 
-  return { begin, end };
-})();
 
+  /* ---------------------------------------------------------------
+   * init: everything below runs exactly once per page load
+   * ------------------------------------------------------------- */
 
-function agentHas(keyword) {
-  return navigator.userAgent.toLowerCase().search(keyword.toLowerCase()) > -1;
-}
+  $(function() {
+    cacheHtml(prefs.thumb_markup);
 
-function isChrome() {
-  return agentHas("CriOS") || agentHas("Chrome") || !!window.chrome;
-}
+    all_picjs();
+
+    // wrap the body textarea up front: wrapping it on first focus moved it and dropped the focus
+    if ($('#body').length) ensurePreviewUI($('#body'));
+
+    // async save: redraw only — handlers are delegated and survive partial replacement
+    textpattern.Relay.register('txpAsyncForm.success', all_picjs);
+
+    // typed/pasted changes to a field
+    $(document).on('input.allpic', fieldSelector, debounce(function() {
+      const $input = $(this);
+      refreshThumbsFromInput($input, ulFor($input));
+    }, 400));
+
+    // shortcode preview button in the body textarea
+    $(document).on('click.allpic keyup.allpic focusin.allpic', '#body', function() {
+      updatePreviewButton($(this));
+    });
+
+    $(document).on('click.allpic', '.allpic-preview-btn', function() {
+      const range = $(this).data('galleryRange');
+      if (range) openGalleryPreview($(this).siblings('textarea'), range);
+    });
+
+    // SideView
+    $(document).on('click.allpic', '.all_pics__add, .all_pics__edit', openSideView);
+    $(document).on('click.allpic', '#all_pic__close', function() {
+      $('#sideView_container').remove();
+      return false;
+    });
+    $(document).on('click.allpic', '#sideView_container header li[data-name]', addSelectedTo);
+
+    // exclude a thumb
+    $(document).on('click.allpic', '.all_pics__delete', deleteThumb);
+
+    // native drag from SideView: drop targets live in this document
+    document.addEventListener('dragover', allPicDrag.over);
+    document.addEventListener('drop', allPicDrag.drop, true);
+
+    if (isChrome()) $('body').addClass('is-chrome');
+  });
+
+  // exports (kept for anything that referenced them)
+  window.allPic = window.allPic || {};
+  window.allPic.makeThumb = makeThumb;
+  window.allPicDrag = allPicDrag;
+
+})(jQuery);
